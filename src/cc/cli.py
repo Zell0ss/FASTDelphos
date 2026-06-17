@@ -1,6 +1,5 @@
 import argparse
 import pathlib
-import sys
 
 from cc.pipeline import run
 
