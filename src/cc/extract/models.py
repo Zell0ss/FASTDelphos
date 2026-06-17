@@ -19,7 +19,8 @@ def _load_models(repo_path: pathlib.Path) -> dict[str, "griffe.Class"]:
             pkg_name = init.parent.name
             try:
                 pkg = griffe.load(pkg_name, search_paths=[repo_path.parent])
-            except Exception:
+            except (ImportError, ModuleNotFoundError):
+                # Package not importable or dependencies missing; skip
                 continue
             _walk_griffe(pkg, found)
     finally:
@@ -99,7 +100,11 @@ def extract_models(
     for fn_node in handler_nodes:
         if not fn_node.props.get("is_handler"):
             continue
-        source = pathlib.Path(fn_node.file).read_text(encoding="utf-8")
+        try:
+            source = pathlib.Path(fn_node.file).read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError):
+            # File not found or unreadable; skip this handler
+            continue
         try:
             tree = ast.parse(source)
         except SyntaxError:
