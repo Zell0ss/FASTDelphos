@@ -13,6 +13,9 @@ def main() -> None:
     comp.add_argument("repo", type=pathlib.Path, help="Path to the target repo")
     comp.add_argument("--out", type=pathlib.Path, default=pathlib.Path("cc-out"),
                       help="Output directory (default: cc-out/)")
+    comp.add_argument("--oracle", action="store_true",
+                      help="Compare static extraction vs. runtime introspection "
+                           "(only for repos that boot without infra)")
 
     args = parser.parse_args()
 
@@ -20,6 +23,15 @@ def main() -> None:
         print(f"Compiling {args.repo} → {args.out} …")
         run(args.repo, args.out)
         print(f"Done. Open {args.out}/index.html")
+        if args.oracle:
+            from cc.extract.endpoints import extract_endpoints
+            from cc.oracle import compare_oracle
+            ep_nodes, _ = extract_endpoints(args.repo)
+            result = compare_oracle(args.repo, ep_nodes)
+            print(f"Route recovery: {result['static_count']}/{result['oracle_count']} "
+                  f"({result['recovery_rate']:.0%})")
+            if result.get("missing"):
+                print("Missing from static:", result["missing"])
 
 
 if __name__ == "__main__":
