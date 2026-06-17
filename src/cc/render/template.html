@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Comprehension Compiler</title>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+  <style>
+    body { margin: 0; font-family: monospace; display: flex; height: 100vh; }
+    #endpoints { width: 260px; overflow-y: auto; border-right: 1px solid #ccc; padding: 8px; }
+    #cy { flex: 1; }
+    #panel { width: 320px; border-left: 1px solid #ccc; padding: 12px; overflow-y: auto; display: none; }
+    .ep-btn { display: block; text-align: left; width: 100%; margin: 2px 0;
+              padding: 4px 8px; background: #f0f0f0; border: none; cursor: pointer; }
+    .ep-btn:hover { background: #ddd; }
+    .badge { font-size: 10px; padding: 1px 4px; border-radius: 3px;
+             color: #fff; margin-right: 4px; }
+    .GET { background: #28a745; } .POST { background: #007bff; }
+    .PUT { background: #fd7e14; } .DELETE { background: #dc3545; }
+    .PATCH { background: #6f42c1; }
+    .inferred { border: 2px dashed #ff9900; }
+    #panel h3 { margin-top: 0; }
+    #panel pre { background: #f8f8f8; padding: 8px; overflow-x: auto; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div id="endpoints">
+    <h4 style="margin:0 0 8px">Endpoints</h4>
+    <div id="ep-list"></div>
+  </div>
+  <div id="cy"></div>
+  <div id="panel">
+    <h3 id="panel-title"></h3>
+    <div id="panel-body"></div>
+  </div>
+
+  <script>
+    const GRAPH = __GRAPH_JSON__;
+
+    // Build Cytoscape elements
+    const elements = [];
+    for (const n of GRAPH.nodes) {
+      elements.push({ data: { id: n.id, label: n.id.split(":").slice(1).join(":"),
+                               type: n.type, inferred: n.inferred, ...n.props },
+                       classes: n.inferred ? "inferred" : "" });
+    }
+    for (const e of GRAPH.edges) {
+      elements.push({ data: { id: e.from_ + "→" + e.to, source: e.from_,
+                               target: e.to, label: e.type, ...e.props } });
+    }
+
+    const cy = cytoscape({
+      container: document.getElementById("cy"),
+      elements,
+      style: [
+        { selector: "node", style: { label: "data(label)", "font-size": 10,
+          "background-color": "#aac", "text-wrap": "wrap", "text-max-width": 120 } },
+        { selector: "node[type='endpoint']", style: { "background-color": "#4a90d9" } },
+        { selector: "node[type='table']",    style: { "background-color": "#e8a838" } },
+        { selector: "node[type='model']",    style: { "background-color": "#5cb85c" } },
+        { selector: "node.inferred",         style: { "border-width": 2, "border-color": "#ff9900" } },
+        { selector: "edge", style: { label: "data(label)", "font-size": 8,
+          "curve-style": "bezier", "target-arrow-shape": "triangle", width: 1.5 } },
+      ],
+      layout: { name: "cose", animate: false },
+    });
+
+    // Endpoint list
+    const epList = document.getElementById("ep-list");
+    for (const n of GRAPH.nodes.filter(n => n.type === "endpoint")) {
+      const btn = document.createElement("button");
+      btn.className = "ep-btn";
+      btn.innerHTML = `<span class="badge ${n.props.method}">${n.props.method}</span>${n.props.path}`;
+      btn.onclick = () => { cy.getElementById(n.id).select(); showPanel(n); };
+      epList.appendChild(btn);
+    }
+
+    // Click panel
+    function showPanel(nodeData) {
+      const panel = document.getElementById("panel");
+      panel.style.display = "block";
+      document.getElementById("panel-title").textContent = nodeData.id;
+      const body = document.getElementById("panel-body");
+      body.innerHTML = "<pre>" + JSON.stringify(nodeData.props || nodeData, null, 2) + "</pre>";
+    }
+
+    cy.on("tap", "node", evt => showPanel(evt.target.data()));
+
+    // Show gaps
+    if (GRAPH.gaps && GRAPH.gaps.length) {
+      const gapDiv = document.createElement("div");
+      gapDiv.style.cssText = "margin-top:16px;border-top:1px solid #ccc;padding-top:8px";
+      gapDiv.innerHTML = "<b>Gaps (" + GRAPH.gaps.length + ")</b>";
+      for (const g of GRAPH.gaps) {
+        const d = document.createElement("div");
+        d.style.cssText = "margin:4px 0;font-size:11px;color:#c00";
+        d.textContent = "⚠ " + g.missing;
+        gapDiv.appendChild(d);
+      }
+      document.getElementById("endpoints").appendChild(gapDiv);
+    }
+  </script>
+</body>
+</html>
