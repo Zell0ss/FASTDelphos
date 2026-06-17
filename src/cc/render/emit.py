@@ -7,14 +7,6 @@ from cc.graph.schema import Graph
 _TEMPLATE = pathlib.Path(__file__).parent / "template.html"
 
 
-def _to_dict(obj) -> object:
-    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        d = dataclasses.asdict(obj)
-        # rename from_ -> from_ is fine in JSON but let's keep it
-        return d
-    return obj
-
-
 def emit(graph: Graph, out_dir: str | pathlib.Path) -> None:
     out_dir = pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
