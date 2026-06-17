@@ -34,3 +34,13 @@ def test_pipeline_finds_table_node():
         data = json.loads((pathlib.Path(d) / "graph.json").read_text())
         table_nodes = [n for n in data["nodes"] if n["type"] == "table"]
         assert any(n["id"] == "table:messages" for n in table_nodes)
+
+
+def test_pipeline_all_edge_sources_exist():
+    with tempfile.TemporaryDirectory() as d:
+        run(SIMPLE_API, pathlib.Path(d))
+        data = json.loads((pathlib.Path(d) / "graph.json").read_text())
+        node_ids = {n["id"] for n in data["nodes"]}
+        for e in data["edges"]:
+            assert e["from_"] in node_ids, f"Edge source {e['from_']} has no node"
+            assert e["to"] in node_ids, f"Edge target {e['to']} has no node"

@@ -24,10 +24,18 @@ def main() -> None:
         run(args.repo, args.out)
         print(f"Done. Open {args.out}/index.html")
         if args.oracle:
+            import sys
             from cc.extract.endpoints import extract_endpoints
             from cc.oracle import compare_oracle
             ep_nodes, _ = extract_endpoints(args.repo)
-            result = compare_oracle(args.repo, ep_nodes)
+            sys.path.insert(0, str(args.repo.parent))
+            try:
+                result = compare_oracle(args.repo, ep_nodes)
+            finally:
+                try:
+                    sys.path.remove(str(args.repo.parent))
+                except ValueError:
+                    pass
             print(f"Route recovery: {result['static_count']}/{result['oracle_count']} "
                   f"({result['recovery_rate']:.0%})")
             if result.get("missing"):

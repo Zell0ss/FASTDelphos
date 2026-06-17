@@ -89,7 +89,7 @@ def compare_oracle(
     app = _load_app(repo_path)
     if app is None:
         return {
-            "static_count": len(ep_nodes),
+            "static_count": len([n for n in ep_nodes if n.type == "endpoint"]),
             "oracle_count": 0,
             "recovery_rate": 0.0,
             "missing": [],

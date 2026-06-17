@@ -1,6 +1,5 @@
 import pathlib
 
-from cc.adapters.fastapi import FastAPIAdapter
 from cc.extract.endpoints import extract_endpoints
 from cc.extract.models import extract_models
 from cc.extract.calls import extract_calls
@@ -13,8 +12,6 @@ from cc.render.emit import emit
 def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
     repo_path = pathlib.Path(repo_path)
     out_dir = pathlib.Path(out_dir)
-
-    _adapter = FastAPIAdapter()
 
     ep_nodes, ep_edges = extract_endpoints(repo_path)
     handler_nodes = [n for n in ep_nodes if n.type == "function"]

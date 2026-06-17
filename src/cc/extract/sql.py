@@ -99,7 +99,7 @@ def extract_sql(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
     repo_path = pathlib.Path(repo_path)
     table_columns: dict[str, set[str]] = defaultdict(set)
     table_files: dict[str, tuple[str, int]] = {}  # table -> (file, line)
-    raw_edges: list[tuple[str, str, str, str]] = []  # (fn_qname, table, op, via)
+    raw_edges: list[tuple[str, str, str, str, str, int]] = []  # (fn_qname, table, op, via, file, lineno)
 
     for file in sorted(repo_path.rglob("*.py")):
         source = file.read_text(encoding="utf-8")
@@ -146,7 +146,7 @@ def extract_sql(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
             fn_qname = _find_enclosing_function(node, tree, module_qname)
             via = f"{file}:{node.lineno}"
             for tbl in tables:
-                raw_edges.append((fn_qname, tbl, op, via))
+                raw_edges.append((fn_qname, tbl, op, via, str(file), node.lineno))
 
     # Build table nodes
     table_nodes: dict[str, Node] = {}
@@ -166,9 +166,26 @@ def extract_sql(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
             props={"name": tbl, "columns": sorted(cols)},
         )
 
+    # Build function nodes for each unique enclosing function that touches the DB
+    fn_nodes: dict[str, Node] = {}
+    for fn_qname, tbl, op, via, edge_file, edge_lineno in raw_edges:
+        if tbl not in table_nodes:
+            continue
+        fn_id = f"function:{fn_qname}"
+        if fn_id not in fn_nodes:
+            fn_nodes[fn_id] = Node(
+                id=fn_id,
+                type="function",
+                file=edge_file,
+                line=edge_lineno,
+                hash=node_hash(edge_file, edge_lineno, edge_lineno),
+                inferred=False,
+                props={"qualname": fn_qname, "kind": "function", "is_handler": False},
+            )
+
     # Build edges
     edges: list[Edge] = []
-    for fn_qname, tbl, op, via in raw_edges:
+    for fn_qname, tbl, op, via, _edge_file, _edge_lineno in raw_edges:
         if tbl not in table_nodes:
             continue
         edges.append(Edge(
@@ -179,4 +196,4 @@ def extract_sql(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
             props={"via": via},
         ))
 
-    return list(table_nodes.values()), edges
+    return list(table_nodes.values()) + list(fn_nodes.values()), edges
