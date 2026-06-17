@@ -1,7 +1,6 @@
 import importlib
 import importlib.util
 import pathlib
-import sys
 
 from cc.graph.schema import Node
 
@@ -107,7 +106,7 @@ def compare_oracle(
     oracle_count = len(oracle_routes)
     static_count = len(static_routes)
     matched = static_routes & oracle_routes
-    recovery_rate = len(matched) / oracle_count if oracle_count > 0 else 1.0
+    recovery_rate = len(matched) / oracle_count if oracle_count > 0 else 0.0
     missing = sorted(oracle_routes - static_routes)
 
     return {
