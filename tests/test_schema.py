@@ -1,4 +1,19 @@
 from cc.graph.schema import Edge, Gap, Graph, Node
+from cc.graph.hash_util import node_hash
+from tests.conftest import SIMPLE_API
+
+
+def test_node_hash_is_stable():
+    h1 = node_hash(SIMPLE_API / "models.py", 1, 6)
+    h2 = node_hash(SIMPLE_API / "models.py", 1, 6)
+    assert h1 == h2
+    assert len(h1) == 64  # SHA-256 hex
+
+
+def test_node_hash_differs_by_span():
+    h1 = node_hash(SIMPLE_API / "models.py", 1, 6)
+    h2 = node_hash(SIMPLE_API / "models.py", 1, 3)
+    assert h1 != h2
 
 
 def test_node_fields():
