@@ -7,6 +7,7 @@ import sqlglot.expressions as exp
 
 from cc.graph.schema import Edge, Node
 from cc.graph.hash_util import node_hash
+from cc.extract._collect import collect_py_files
 
 _DB_METHODS = {"execute", "executemany", "fetchone", "fetchall", "fetchmany"}
 
@@ -101,7 +102,7 @@ def extract_sql(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
     table_files: dict[str, tuple[str, int]] = {}  # table -> (file, line)
     raw_edges: list[tuple[str, str, str, str, str, int]] = []  # (fn_qname, table, op, via, file, lineno)
 
-    for file in sorted(repo_path.rglob("*.py")):
+    for file in collect_py_files(repo_path):
         source = file.read_text(encoding="utf-8")
         try:
             tree = ast.parse(source, filename=str(file))

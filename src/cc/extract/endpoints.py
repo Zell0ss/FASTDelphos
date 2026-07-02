@@ -2,6 +2,7 @@ import ast
 import pathlib
 from cc.graph.schema import Edge, Node
 from cc.graph.hash_util import node_hash
+from cc.extract._collect import collect_py_files
 
 _HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
 
@@ -69,7 +70,7 @@ def extract_endpoints(repo_path: str | pathlib.Path) -> tuple[list[Node], list[E
     nodes: list[Node] = []
     edges: list[Edge] = []
 
-    for file in sorted(repo_path.rglob("*.py")):
+    for file in collect_py_files(repo_path):
         source = file.read_text(encoding="utf-8")
         try:
             tree = ast.parse(source, filename=str(file))

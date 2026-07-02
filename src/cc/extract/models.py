@@ -8,23 +8,39 @@ from cc.graph.schema import Edge, Node
 from cc.graph.hash_util import node_hash
 
 
+_SKIP_DIRS = {".venv", "__pycache__", ".git", "node_modules", ".tox", "dist", "build", "tests"}
+
+
 def _load_models(repo_path: pathlib.Path) -> dict[str, "griffe.Class"]:
     """Return short_name -> griffe.Class for all BaseModel subclasses under repo_path."""
     found: dict[str, griffe.Class] = {}
-    # Use repo_path.parent so packages are importable by their directory name
-    search_root = str(repo_path.parent)
-    sys.path.insert(0, search_root)
-    try:
-        for init in repo_path.rglob("__init__.py"):
-            pkg_name = init.parent.name
-            try:
-                pkg = griffe.load(pkg_name, search_paths=[repo_path.parent])
-            except (ImportError, ModuleNotFoundError):
-                # Package not importable or dependencies missing; skip
-                continue
+
+    def _try_load(pkg_name: str, search_paths: list[pathlib.Path]) -> None:
+        sys.path.insert(0, str(search_paths[0]))
+        try:
+            pkg = griffe.load(pkg_name, search_paths=search_paths)
             _walk_griffe(pkg, found)
-    finally:
-        sys.path.pop(0)
+        except Exception:
+            pass
+        finally:
+            try:
+                sys.path.remove(str(search_paths[0]))
+            except ValueError:
+                pass
+
+    # Top-level sub-packages inside the repo (e.g. agora/backend/).
+    # griffe.load on each recurses into sub-packages automatically.
+    loaded_any = False
+    for init in repo_path.glob("*/__init__.py"):
+        if init.parent.name in _SKIP_DIRS:
+            continue
+        _try_load(init.parent.name, [repo_path])
+        loaded_any = True
+
+    # Fallback: the repo itself is the package (e.g. tests/fixtures/simple_api/).
+    if not loaded_any and (repo_path / "__init__.py").exists():
+        _try_load(repo_path.name, [repo_path.parent])
+
     return found
 
 

@@ -1,6 +1,7 @@
 import pathlib
 from pyan.analyzer import CallGraphVisitor
 from cc.graph.schema import Edge
+from cc.extract._collect import collect_py_files
 
 
 def _qualname_from_pyan_node(node) -> str | None:
@@ -13,7 +14,7 @@ def _qualname_from_pyan_node(node) -> str | None:
 
 def extract_calls(repo_path: str | pathlib.Path) -> list[Edge]:
     repo_path = pathlib.Path(repo_path)
-    files = [str(f) for f in repo_path.rglob("*.py")]
+    files = [str(f) for f in collect_py_files(repo_path)]
     if not files:
         return []
 
