@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Comprehension Compiler</title>
+  <script>__CYTOSCAPE_JS__</script>
+  <style>
+    body { margin: 0; font-family: monospace; display: flex; height: 100vh; background: #1a1a2e; color: #e0e0e0; }
+    #sidebar { width: 270px; overflow-y: auto; border-right: 1px solid #333; padding: 8px; display: flex; flex-direction: column; gap: 0; }
+    #cy { flex: 1; background: #12122a; }
+    #panel { width: 340px; border-left: 1px solid #333; padding: 12px; overflow-y: auto; display: none; background: #1a1a2e; }
+    .ep-btn { display: block; text-align: left; width: 100%; margin: 2px 0;
+              padding: 4px 8px; background: #252545; border: 1px solid #333; cursor: pointer; color: #e0e0e0; font-family: monospace; font-size: 11px; border-radius: 3px; }
+    .ep-btn:hover { background: #353565; }
+    .badge { font-size: 10px; padding: 1px 4px; border-radius: 3px; color: #fff; margin-right: 4px; }
+    .GET { background: #28a745; } .POST { background: #007bff; }
+    .PUT { background: #fd7e14; } .DELETE { background: #dc3545; }
+    .PATCH { background: #6f42c1; }
+    .inferred { border: 2px dashed #ff9900; }
+    #panel h3 { margin-top: 0; color: #aad; }
+    #panel pre { background: #12122a; padding: 8px; overflow-x: auto; font-size: 11px; border: 1px solid #333; border-radius: 3px; color: #cde; }
+    .section-title { font-size: 11px; font-weight: bold; color: #8899bb; margin: 12px 0 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .edge-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 11px; }
+    .edge-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .edge-row input[type=checkbox] { cursor: pointer; }
+    .gap-item { margin: 4px 0; font-size: 10px; padding: 4px 6px; border-radius: 3px; border-left: 3px solid; }
+    .gap-warning { border-color: #f0ad4e; background: #2a2010; color: #f0ad4e; }
+    .gap-error   { border-color: #dc3545; background: #2a1015; color: #ff8895; }
+    .node-legend { display: flex; align-items: center; gap: 6px; margin: 2px 0; font-size: 11px; }
+    .node-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <div style="font-size:13px;font-weight:bold;color:#aad;margin-bottom:4px">Comprehension Compiler</div>
+
+    <div class="section-title">Endpoints</div>
+    <div id="ep-list"></div>
+
+    <div class="section-title">Nodos</div>
+    <div class="node-legend"><span class="node-dot" style="background:#4a90d9"></span>endpoint</div>
+    <div class="node-legend"><span class="node-dot" style="background:#aac"></span>function</div>
+    <div class="node-legend"><span class="node-dot" style="background:#5cb85c"></span>model</div>
+    <div class="node-legend"><span class="node-dot" style="background:#e8a838"></span>table</div>
+
+    <div class="section-title">Aristas — etiquetas</div>
+    <div id="edge-controls"></div>
+    <div style="margin-top:4px">
+      <label class="edge-row" style="font-size:10px;color:#778">
+        <input type="checkbox" id="labels-all" checked onchange="toggleAllLabels(this.checked)">
+        todas activas
+      </label>
+    </div>
+
+    <div id="gaps-section"></div>
+  </div>
+
+  <div id="cy"></div>
+
+  <div id="panel">
+    <h3 id="panel-title"></h3>
+    <div id="panel-body"></div>
+  </div>
+
+  <script>
+    const GRAPH = __GRAPH_JSON__;
+
+    const EDGE_COLORS = {
+      handles:    '#999999',
+      calls:      '#5b8dd9',
+      uses_model: '#5cb85c',
+      reads:      '#17a2b8',
+      writes:     '#e06020',
+    };
+
+    // Build Cytoscape elements
+    const elements = [];
+    for (const n of GRAPH.nodes) {
+      elements.push({ data: { id: n.id, label: n.id.split(":").slice(1).join(":"),
+                               type: n.type, inferred: n.inferred, ...n.props },
+                       classes: n.inferred ? "inferred" : "" });
+    }
+    for (const e of GRAPH.edges) {
+      elements.push({ data: { id: e.from_ + "\u2192" + e.to, source: e.from_,
+                               target: e.to, label: e.type, ...e.props } });
+    }
+
+    const baseEdgeStyle = {
+      label: "data(label)", "font-size": 8,
+      "curve-style": "bezier", "target-arrow-shape": "triangle", width: 1.5,
+      "line-color": "#aaa", "target-arrow-color": "#aaa", color: "#ccc",
+      "text-background-color": "#1a1a2e", "text-background-opacity": 0.8,
+      "text-background-padding": "2px",
+    };
+
+    const edgeTypeStyles = Object.entries(EDGE_COLORS).map(([type, color]) => ({
+      selector: `edge[label="${type}"]`,
+      style: { "line-color": color, "target-arrow-color": color },
+    }));
+
+    const cy = cytoscape({
+      container: document.getElementById("cy"),
+      elements,
+      style: [
+        { selector: "node", style: {
+            label: "data(label)", "font-size": 10,
+            "background-color": "#aac", "text-wrap": "wrap", "text-max-width": 120,
+            color: "#dde", "text-background-color": "#1a1a2e",
+            "text-background-opacity": 0.7, "text-background-padding": "2px",
+          }
+        },
+        { selector: "node[type='endpoint']", style: { "background-color": "#4a90d9" } },
+        { selector: "node[type='table']",    style: { "background-color": "#e8a838" } },
+        { selector: "node[type='model']",    style: { "background-color": "#5cb85c" } },
+        { selector: "node.inferred",         style: { "border-width": 2, "border-color": "#ff9900" } },
+        { selector: "edge", style: baseEdgeStyle },
+        ...edgeTypeStyles,
+      ],
+      layout: { name: "cose", animate: false },
+    });
+
+    // Endpoint list
+    const epList = document.getElementById("ep-list");
+    for (const n of GRAPH.nodes.filter(n => n.type === "endpoint")) {
+      const btn = document.createElement("button");
+      btn.className = "ep-btn";
+      btn.innerHTML = `<span class="badge ${n.props.method}">${n.props.method}</span>${n.props.path}`;
+      btn.onclick = () => { cy.getElementById(n.id).select(); showPanel(n); };
+      epList.appendChild(btn);
+    }
+
+    // Edge type controls
+    const labelState = {};
+    const ctrl = document.getElementById("edge-controls");
+    const edgeTypes = [...new Set(GRAPH.edges.map(e => e.type))].sort();
+    for (const type of edgeTypes) {
+      labelState[type] = true;
+      const color = EDGE_COLORS[type] || "#aaa";
+      const count = GRAPH.edges.filter(e => e.type === type).length;
+      const row = document.createElement("label");
+      row.className = "edge-row";
+      row.innerHTML = `<input type="checkbox" checked onchange="toggleEdgeLabel('${type}', this.checked)">
+        <span class="edge-dot" style="background:${color}"></span>
+        <span>${type} <span style="color:#556;font-size:10px">(${count})</span></span>`;
+      ctrl.appendChild(row);
+    }
+
+    function toggleEdgeLabel(type, show) {
+      labelState[type] = show;
+      cy.style().selector(`edge[label="${type}"]`)
+        .style({ label: show ? "data(label)" : "" }).update();
+      // sync master checkbox
+      const allOn = Object.values(labelState).every(Boolean);
+      document.getElementById("labels-all").checked = allOn;
+    }
+
+    function toggleAllLabels(show) {
+      for (const type of edgeTypes) {
+        labelState[type] = show;
+        cy.style().selector(`edge[label="${type}"]`)
+          .style({ label: show ? "data(label)" : "" }).update();
+      }
+      ctrl.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = show);
+    }
+
+    // Click panel
+    function showPanel(nodeData) {
+      const panel = document.getElementById("panel");
+      panel.style.display = "block";
+      document.getElementById("panel-title").textContent = nodeData.id;
+      const body = document.getElementById("panel-body");
+      const props = nodeData.props || nodeData;
+      // Find connected edges
+      const edgesFrom = GRAPH.edges.filter(e => e.from_ === nodeData.id);
+      const edgesTo   = GRAPH.edges.filter(e => e.to   === nodeData.id);
+      let html = "<pre>" + JSON.stringify(props, null, 2) + "</pre>";
+      if (edgesFrom.length) {
+        html += "<div style=\"margin-top:8px;font-size:11px;color:#8899bb\">Sale de este nodo:</div>";
+        for (const e of edgesFrom) {
+          const color = EDGE_COLORS[e.type] || "#aaa";
+          html += `<div style="font-size:10px;margin:2px 0"><span style="color:${color}">${e.type}</span> → ${e.to.split(":").slice(1).join(":")}</div>`;
+          if (e.props && e.props.via) html += `<div style="font-size:9px;color:#667;margin-left:12px">via ${e.props.via}</div>`;
+        }
+      }
+      if (edgesTo.length) {
+        html += "<div style=\"margin-top:8px;font-size:11px;color:#8899bb\">Entra a este nodo:</div>";
+        for (const e of edgesTo) {
+          const color = EDGE_COLORS[e.type] || "#aaa";
+          html += `<div style="font-size:10px;margin:2px 0">${e.from_.split(":").slice(1).join(":")} <span style="color:${color}">${e.type}</span> →</div>`;
+        }
+      }
+      body.innerHTML = html;
+    }
+
+    cy.on("tap", "node", evt => showPanel(evt.target.data()));
+
+    // Gaps section
+    if (GRAPH.gaps && GRAPH.gaps.length) {
+      const sec = document.getElementById("gaps-section");
+      sec.innerHTML = `<div class="section-title" style="margin-top:12px">Gaps (${GRAPH.gaps.length})</div>`;
+      for (const g of GRAPH.gaps) {
+        const d = document.createElement("div");
+        const sev = (g.severity && g.severity.compliance === "error") ? "gap-error" : "gap-warning";
+        d.className = "gap-item " + sev;
+        d.title = g.suggested || "";
+        d.textContent = "⚠ " + g.missing;
+        sec.appendChild(d);
+      }
+    }
+  </script>
+</body>
+</html>
