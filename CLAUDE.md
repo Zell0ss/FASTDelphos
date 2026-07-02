@@ -65,7 +65,7 @@ pyproject.toml
 
 - **`missing_artifact`** — info isn't in the source (e.g. table referenced but no `CREATE TABLE`). Actionable: ask dev to add it. `comprehension: warning`, `compliance: error`.
 - **`unresolved_dynamic`** — info exists at runtime (`Depends`, `getattr`, dispatch-by-dict). Mark `inferred=true`, don't ask. Not a gap.
-- **`tool_limitation`** — info IS in the source, but the current tool can't parse it (e.g. pyan3 crashes on module-level initialization code). Signals partial coverage, not a repo defect. Always `warning` for both audiences — repo isn't broken, extraction is partial. `suggested` points to how to restructure the code for the parser, but it's not compliance-blocking.
+- **`tool_limitation`** — info IS in the source, but the current tool can't parse it (e.g. pyan3 crashes on module-level initialization code). Signals partial coverage, not a repo defect. `comprehension: warning` (partial but still useful), `compliance: error` (an auditor cannot trace flows through a file with no call graph).
 
 Gap fields: `kind`, `where` (file:line + node id), `missing` (human description), `suggested` (fillable stub), `severity.comprehension`, `severity.compliance`.
 

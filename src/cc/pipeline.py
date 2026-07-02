@@ -38,7 +38,7 @@ def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
                 "Wrap module-level runtime setup in `if __name__ == '__main__':` "
                 "or move it inside a function so static parsers can process the file."
             ),
-            severity={"comprehension": "warning", "compliance": "warning"},
+            severity={"comprehension": "warning", "compliance": "error"},
         ))
 
     if call_excluded:
