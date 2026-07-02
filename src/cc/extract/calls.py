@@ -12,17 +12,47 @@ def _qualname_from_pyan_node(node) -> str | None:
     return None
 
 
+def _run_pyan(files: list[str]):
+    """Run pyan3 on files, auto-excluding any that cause TypeError crashes."""
+    skip: set[str] = set()
+    while True:
+        working = [f for f in files if f not in skip]
+        if not working:
+            return None
+        try:
+            v = CallGraphVisitor(working)
+            v.process()
+            v.postprocess()
+            return v
+        except Exception:
+            # Probe files individually to isolate the problematic one
+            bad = next(
+                (f for f in working if _crashes_pyan(f) and f not in skip),
+                None,
+            )
+            if bad is None:
+                return None  # crash not isolatable; give up
+            skip.add(bad)
+
+
+def _crashes_pyan(file: str) -> bool:
+    try:
+        v = CallGraphVisitor([file])
+        v.process()
+        v.postprocess()
+        return False
+    except Exception:
+        return True
+
+
 def extract_calls(repo_path: str | pathlib.Path) -> list[Edge]:
     repo_path = pathlib.Path(repo_path)
     files = [str(f) for f in collect_py_files(repo_path)]
     if not files:
         return []
 
-    try:
-        visitor = CallGraphVisitor(files)
-        visitor.process()
-        visitor.postprocess()
-    except Exception:
+    visitor = _run_pyan(files)
+    if visitor is None:
         return []
 
     edges: list[Edge] = []

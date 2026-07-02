@@ -4,38 +4,71 @@ import pathlib
 
 from cc.graph.schema import Node
 
+_SKIP_DIRS = {".venv", "__pycache__", ".git", "node_modules", "tests", "dist", "build"}
+_CANDIDATES = ["main", "app", "server"]
+
+
+def _pkg_names(repo_path: pathlib.Path) -> list[str]:
+    """Top-level importable names to probe: repo itself, then sub-packages."""
+    names = [repo_path.name]
+    for init in repo_path.glob("*/__init__.py"):
+        if init.parent.name not in _SKIP_DIRS:
+            names.append(init.parent.name)
+    return names
+
+
+def _repo_site_packages(repo_path: pathlib.Path) -> list[str]:
+    """Find the target repo's .venv site-packages paths, if present."""
+    import sys as _sys
+    ver = f"python{_sys.version_info.major}.{_sys.version_info.minor}"
+    candidates = [
+        repo_path / ".venv" / "lib" / ver / "site-packages",
+        repo_path / "venv" / "lib" / ver / "site-packages",
+    ]
+    return [str(p) for p in candidates if p.is_dir()]
+
 
 def _load_app(repo_path: pathlib.Path):
-    """Import the FastAPI `app` object from the target repo. Returns None on failure.
+    """Import the FastAPI `app` object from the target repo. Returns None on failure."""
+    import os as _os
+    import sys as _sys
 
-    Tries each candidate module name in order.  We first attempt a package
-    import (so relative imports inside the module work) and fall back to
-    direct file-loading when no package is present.
-    """
-    for candidate in ["main", "app", "server"]:
-        # --- package-aware import (handles `from .models import …`) ---
-        pkg_name = repo_path.name  # e.g. "simple_api"
-        qualified = f"{pkg_name}.{candidate}"
-        try:
-            mod = importlib.import_module(qualified)
-            if hasattr(mod, "app"):
-                return mod.app
-        except Exception:
-            pass
+    extra = [str(repo_path)] + _repo_site_packages(repo_path)
+    old_cwd = _os.getcwd()
+    for p in reversed(extra):
+        _sys.path.insert(0, p)
+    _os.chdir(repo_path)  # pydantic-settings reads .env relative to CWD
+    try:
+        for pkg_name in _pkg_names(repo_path):
+            for candidate in _CANDIDATES:
+                try:
+                    mod = importlib.import_module(f"{pkg_name}.{candidate}")
+                    if hasattr(mod, "app"):
+                        return mod.app
+                except Exception:
+                    pass
 
-        # --- fallback: direct file load (no relative imports) ---
-        try:
-            spec = importlib.util.spec_from_file_location(
-                candidate, repo_path / f"{candidate}.py"
-            )
-            if spec is None:
+        # Fallback: direct file load for flat repos (no package)
+        for candidate in _CANDIDATES:
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    candidate, repo_path / f"{candidate}.py"
+                )
+                if spec is None:
+                    continue
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                if hasattr(mod, "app"):
+                    return mod.app
+            except Exception:
                 continue
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            if hasattr(mod, "app"):
-                return mod.app
-        except Exception:
-            continue
+    finally:
+        _os.chdir(old_cwd)
+        for p in extra:
+            try:
+                _sys.path.remove(p)
+            except ValueError:
+                pass
 
     return None
 
