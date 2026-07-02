@@ -40,7 +40,7 @@ src/cc/
   cli.py
   pipeline.py
   adapters/{base.py, fastapi.py, generic.py (stub)}
-  extract/{endpoints.py, models.py, calls.py, sql.py}
+  extract/{_collect.py, endpoints.py, models.py, calls.py, sql.py}
   graph/{schema.py, build.py}
   gaps.py
   render/{template.html, emit.py}
@@ -63,12 +63,21 @@ pyproject.toml
 
 ## Gap Types — Do Not Conflate
 
-- **`missing_artifact`** — info isn't in the source (e.g. table referenced but no `CREATE TABLE`). Actionable: ask dev to add it. Real gap.
+- **`missing_artifact`** — info isn't in the source (e.g. table referenced but no `CREATE TABLE`). Actionable: ask dev to add it. `comprehension: warning`, `compliance: error`.
 - **`unresolved_dynamic`** — info exists at runtime (`Depends`, `getattr`, dispatch-by-dict). Mark `inferred=true`, don't ask. Not a gap.
+- **`tool_limitation`** — info IS in the source, but the current tool can't parse it (e.g. pyan3 crashes on module-level initialization code). Signals partial coverage, not a repo defect. Always `warning` for both audiences — repo isn't broken, extraction is partial. `suggested` points to how to restructure the code for the parser, but it's not compliance-blocking.
 
 Gap fields: `kind`, `where` (file:line + node id), `missing` (human description), `suggested` (fillable stub), `severity.comprehension`, `severity.compliance`.
 
-Same gap is `warning` for comprehension and `error` for compliance — a linaje with holes doesn't work for an auditor, but partial comprehension is still useful.
+## Extractor Conventions
+
+**File discovery** — always use `collect_py_files(repo_path)` from `extract/_collect.py`. Never use `rglob("*.py")` directly — it walks the target repo's `.venv` and pollutes the graph with vendor code. Excluded dirs: `.venv`, `__pycache__`, `.git`, `node_modules`, `tests`, `dist`, `build`.
+
+**griffe package discovery** (`extract/models.py`) — use `glob("*/__init__.py")` (one level, not rglob) to find top-level packages. Call `griffe.load(pkg_name, search_paths=[repo_path])` — search root is the repo itself, not its parent. If no sub-packages exist, fall back to loading the repo directory itself as a package from `repo_path.parent`. Catch all exceptions from griffe per package (it can raise `KeyError`, `ImportError`, etc.).
+
+**pyan3 resilience** (`extract/calls.py`) — `extract_calls()` returns `(list[Edge], list[tuple[str, str]])` where the second element is `[(excluded_file, error_message)]`. When pyan3 crashes, the pipeline probes files individually to find the bad one, excludes it, and retries. Each excluded file becomes a `tool_limitation` gap visible in the output. Never silently return empty.
+
+**Oracle** (`oracle.py`) — only used with `--oracle` flag. Discovers top-level sub-packages (not just `repo_path.name`) to try `backend.main` etc. Adds target's `.venv` site-packages to `sys.path`. Does `os.chdir(repo_path)` so pydantic-settings finds `.env`. Uses `app.openapi()` (fully resolves sub-routers), not `app.routes`.
 
 ## Phase Roadmap
 

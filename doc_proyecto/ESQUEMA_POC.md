@@ -89,13 +89,14 @@ El tool no rellena en silencio ni adivina hechos estructurales: cuando algo no s
 
 - **`missing_artifact`** — la info no está en la fuente (p.ej. `messages` referenciada pero sin `CREATE TABLE`). Ayuda al humano → **se pregunta**: el dev añade el artefacto al repo, aunque sea a mano.
 - **`unresolved_dynamic`** — la info sí está, pero es runtime-bound (`Depends`, `getattr`, dispatch por dict). Pedir reescribir código que funciona solo contenta al parser → **no se pregunta**: se marca `inferred`.
+- **`tool_limitation`** — la info está en la fuente, pero la herramienta actual no puede parsearla (p.ej. pyan3 crashea en código con inicialización a nivel de módulo). No es un gap del repo: es transparencia sobre la cobertura del tool. Siempre `warning`, nunca `error` — el repo no está roto, la extracción es parcial. El `suggested` apunta a cómo reestructurar el código para que el parser lo digiera, pero el gap no es accionable para compliance.
 - Zona gris: si rellenar ayuda al humano (anotación de tipo en un `Depends`), entonces cuenta como `missing_artifact`.
 
 **Estructura de un gap:**
 
 | Campo | Contenido |
 |---|---|
-| `kind` | `missing_artifact` \| `unresolved_dynamic` |
+| `kind` | `missing_artifact` \| `unresolved_dynamic` \| `tool_limitation` |
 | `where` | `file:line` y/o `id` del nodo afectado |
 | `missing` | qué falta, en humano |
 | `suggested` | artefacto concreto a añadir; idealmente un **stub rellenable** (`-- TODO: DDL de messages, ref. synthesis.py:42`) |

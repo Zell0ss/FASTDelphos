@@ -59,18 +59,26 @@ comprehension-compiler/
     cli.py
     pipeline.py
     adapters/{base.py, fastapi.py, generic.py(stub)}
-    extract/{endpoints.py, models.py, calls.py, sql.py}
+    extract/{_collect.py, endpoints.py, models.py, calls.py, sql.py}
     graph/{schema.py, build.py}
     gaps.py
     render/{template.html, emit.py}
   tests/
 ```
 
+`_collect.py` — helper compartido por todos los extractores. Devuelve `.py` del repo excluyendo `.venv`, `__pycache__`, `.git`, `node_modules`, `tests`, `dist`, `build`. Todos los extractores DEBEN usarlo; no usar `rglob("*.py")` directamente o se scanea el `.venv` del target.
+
 ## 6. Introspección runtime — solo como ORÁCULO en fase 1
 
 La vía de producción para endpoints/models es **puro estático** (parsear decoradores + anotaciones). NO importar la app.
 
 Excepción controlada: agora boota limpio en dev, así que CCode puede importar la app **una sola vez** (`app.routes`/`app.openapi()`) para producir un *ground truth* y medir cuánto recupera el extractor estático (diff = tasa de recuperación de rutas). Es un checker del POC, **no** la vía de producción. En BNP no existe.
+
+**Requisitos de la introspección oráculo** (implementados en `oracle.py`):
+- El módulo de la app puede estar en un sub-paquete del repo (p.ej. `backend/main.py`, no `main.py` en raíz). El oracle descubre los sub-paquetes top-level y prueba `{pkg}.main`, `{pkg}.app`, `{pkg}.server`.
+- El `.venv` del target repo se añade a `sys.path` para que las dependencias de la app sean importables (p.ej. `aiomysql`).
+- Se hace `os.chdir(repo_path)` antes de importar para que pydantic-settings encuentre el `.env` del repo target.
+- `app.openapi()` (no `app.routes`) — resuelve todos los sub-routers y devuelve paths completos.
 
 ---
 
@@ -83,7 +91,7 @@ Excepción controlada: agora boota limpio en dev, así que CCode puede importar 
 - CLI `compile <path> --out <dir>`.
 - **Endpoints**: decorador (método, path), handler (qualname), router prefixes resueltos estáticamente. Aristas `handles`.
 - **Models**: clases Pydantic referenciadas en firmas del handler → nodos `model` con `fields[]`. Aristas `uses_model` (`direction` in/out) desde las anotaciones.
-- **Calls**: pyan3 best-effort. Agujeros dinámicos → `inferred`, no gap.
+- **Calls**: pyan3 best-effort. Agujeros dinámicos → `inferred`, no gap. Ficheros que crashean pyan3 (código a nivel de módulo que el parser no digiere) → gap `tool_limitation` visible, no bloqueo silencioso. `extract_calls()` devuelve `(edges, [(file, error)])` — el pipeline convierte el segundo elemento en gaps.
 - **Tables/columns**: sqlglot sobre los call sites de aiomysql → nodos `table`, aristas `reads`/`writes` con `via`. Columnas: `CREATE TABLE` si está → si no, INSERT/UPDATE → SELECT de una tabla. No inferible → **gap** `missing_artifact`.
 - **Grafo JSON** conforme a `esquema-grafo-poc.md` (incluye `id`/`hash`/`inferred` y `gaps[]`).
 - **Render** HTML/Cytoscape: lista de endpoints como puerta, drill-down a nodo, gaps visibles.
