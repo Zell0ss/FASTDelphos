@@ -23,7 +23,7 @@ class Edge:
 
 @dataclass
 class Gap:
-    kind: str  # missing_artifact | unresolved_dynamic
+    kind: str  # missing_artifact | unresolved_dynamic | tool_limitation
     where: str  # "file:line"
     node_id: str | None
     missing: str

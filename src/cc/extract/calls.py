@@ -12,48 +12,61 @@ def _qualname_from_pyan_node(node) -> str | None:
     return None
 
 
-def _run_pyan(files: list[str]):
-    """Run pyan3 on files, auto-excluding any that cause TypeError crashes."""
-    skip: set[str] = set()
-    while True:
-        working = [f for f in files if f not in skip]
-        if not working:
-            return None
-        try:
-            v = CallGraphVisitor(working)
-            v.process()
-            v.postprocess()
-            return v
-        except Exception:
-            # Probe files individually to isolate the problematic one
-            bad = next(
-                (f for f in working if _crashes_pyan(f) and f not in skip),
-                None,
-            )
-            if bad is None:
-                return None  # crash not isolatable; give up
-            skip.add(bad)
-
-
-def _crashes_pyan(file: str) -> bool:
+def _probe_file(file: str) -> str | None:
+    """Return error message if this file alone crashes pyan3, else None."""
     try:
         v = CallGraphVisitor([file])
         v.process()
         v.postprocess()
-        return False
-    except Exception:
-        return True
+        return None
+    except Exception as exc:
+        return str(exc)
 
 
-def extract_calls(repo_path: str | pathlib.Path) -> list[Edge]:
+def _run_pyan(
+    files: list[str],
+) -> tuple["CallGraphVisitor | None", list[tuple[str, str]]]:
+    """Run pyan3 on files, auto-excluding any that cause crashes.
+
+    Returns (visitor | None, [(excluded_file, error_message)]).
+    """
+    excluded: dict[str, str] = {}  # file -> error
+    while True:
+        working = [f for f in files if f not in excluded]
+        if not working:
+            return None, list(excluded.items())
+        try:
+            v = CallGraphVisitor(working)
+            v.process()
+            v.postprocess()
+            return v, list(excluded.items())
+        except Exception:
+            # Probe individually to isolate one bad file per iteration
+            bad = next(
+                ((f, err) for f in working
+                 if (err := _probe_file(f)) is not None and f not in excluded),
+                None,
+            )
+            if bad is None:
+                return None, list(excluded.items())
+            excluded[bad[0]] = bad[1]
+
+
+def extract_calls(
+    repo_path: str | pathlib.Path,
+) -> tuple[list[Edge], list[tuple[str, str]]]:
+    """Return (call edges, [(excluded_file, error_msg)]).
+
+    Files that crash pyan3 are excluded and reported rather than silently dropped.
+    """
     repo_path = pathlib.Path(repo_path)
     files = [str(f) for f in collect_py_files(repo_path)]
     if not files:
-        return []
+        return [], []
 
-    visitor = _run_pyan(files)
+    visitor, excluded = _run_pyan(files)
     if visitor is None:
-        return []
+        return [], excluded
 
     edges: list[Edge] = []
     seen: set[tuple[str, str]] = set()
@@ -78,4 +91,4 @@ def extract_calls(repo_path: str | pathlib.Path) -> list[Edge]:
                 type="calls", inferred=False, props={},
             ))
 
-    return edges
+    return edges, excluded
