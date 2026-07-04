@@ -104,3 +104,157 @@ def build_symbol_inventory(repo_path: str | pathlib.Path) -> SymbolInventory:
         _try_load(repo_path.name, [repo_path.parent])
 
     return inv
+
+
+def _module_level_import_nodes(tree: ast.Module):
+    """Yield ast.Import / ast.ImportFrom nodes reachable at module scope —
+    including inside module-level `if`/`try` blocks, but NOT inside function
+    or class bodies (a local import only rebinds a name within that function).
+    """
+    def _walk(node):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.Import, ast.ImportFrom)):
+                yield child
+            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            else:
+                yield from _walk(child)
+    yield from _walk(tree)
+
+
+def _relative_package(module_qname: str, is_package_init: bool, level: int) -> str | None:
+    """Resolve `level` leading dots of a relative import to an absolute package prefix.
+
+    `is_package_init` distinguishes a package's own `__init__.py` (whose
+    containing package IS `module_qname`) from a regular module (whose
+    containing package is `module_qname` minus its last component).
+    """
+    parts = module_qname.split(".") if module_qname else []
+    base = parts if is_package_init else parts[:-1]
+    trim = level - 1
+    if trim:
+        if trim > len(base):
+            return None
+        base = base[: len(base) - trim]
+    return ".".join(base) if base else None
+
+
+def build_import_table(tree: ast.Module, module_qname: str, is_package_init: bool) -> dict[str, str]:
+    """Map each module-level imported local name to its absolute dotted qualname prefix."""
+    table: dict[str, str] = {}
+    for node in _module_level_import_nodes(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local = alias.asname or alias.name.split(".")[0]
+                qualname = alias.name if alias.asname else alias.name.split(".")[0]
+                table[local] = qualname
+        else:  # ast.ImportFrom
+            if node.level:
+                base = _relative_package(module_qname, is_package_init, node.level)
+                if base is None:
+                    continue
+                module = f"{base}.{node.module}" if node.module else base
+            elif node.module is not None:
+                module = node.module
+            else:
+                continue
+            for alias in node.names:
+                local = alias.asname or alias.name
+                table[local] = f"{module}.{alias.name}"
+    return table
+
+
+def flatten_attribute(node: ast.expr) -> list[str] | None:
+    """Turn a Name/Attribute chain into its dotted parts (`a.b.c` -> ["a","b","c"]).
+
+    Returns None if the chain includes anything other than Name/Attribute
+    (a call result, a subscript, ...) — that signals a dynamic/chained base.
+    """
+    if isinstance(node, ast.Name):
+        return [node.id]
+    if isinstance(node, ast.Attribute):
+        base = flatten_attribute(node.value)
+        if base is None:
+            return None
+        return base + [node.attr]
+    return None
+
+
+def resolve_method_in_hierarchy(
+    inv: SymbolInventory, class_qname: str, method_name: str, _seen: set[str] | None = None,
+) -> str | None:
+    """Look up `method_name` on `class_qname`, then walk up its base classes."""
+    if _seen is None:
+        _seen = set()
+    if class_qname in _seen:
+        return None
+    _seen.add(class_qname)
+
+    methods = inv.class_methods.get(class_qname, {})
+    if method_name in methods:
+        return methods[method_name]
+    for base in inv.class_bases.get(class_qname, []):
+        found = resolve_method_in_hierarchy(inv, base, method_name, _seen)
+        if found:
+            return found
+    return None
+
+
+@dataclass
+class Resolution:
+    kind: str  # "internal" | "external" | "dynamic"
+    qualname: str | None = None
+    package: str | None = None
+
+
+def _classify_qualname(qualname: str, inventory: SymbolInventory) -> Resolution:
+    if qualname in inventory.functions:
+        return Resolution(kind="internal", qualname=qualname)
+    top = qualname.split(".")[0]
+    if top not in inventory.top_level_packages:
+        return Resolution(kind="external", package=top)
+    return Resolution(kind="dynamic")
+
+
+def classify_call(
+    call: ast.Call,
+    *,
+    import_table: dict[str, str],
+    module_qname: str,
+    class_qname: str | None,
+    inventory: SymbolInventory,
+) -> Resolution:
+    func = call.func
+
+    if isinstance(func, ast.Name):
+        name = func.id
+        candidate = f"{module_qname}.{name}"
+        if candidate in inventory.functions:
+            return Resolution(kind="internal", qualname=candidate)
+        prefix = import_table.get(name)
+        if prefix is not None:
+            return _classify_qualname(prefix, inventory)
+        return Resolution(kind="dynamic")
+
+    if isinstance(func, ast.Attribute):
+        parts = flatten_attribute(func)
+        if parts is None:
+            return Resolution(kind="dynamic")
+
+        base_name, attr = parts[0], parts[-1]
+
+        if base_name in ("self", "cls") and class_qname is not None and len(parts) == 2:
+            resolved = resolve_method_in_hierarchy(inventory, class_qname, attr)
+            if resolved:
+                return Resolution(kind="internal", qualname=resolved)
+            return Resolution(kind="dynamic")
+
+        prefix = import_table.get(base_name)
+        if prefix is not None:
+            rest = ".".join(parts[1:])
+            full = f"{prefix}.{rest}" if rest else prefix
+            return _classify_qualname(full, inventory)
+
+        return Resolution(kind="dynamic")
+
+    return Resolution(kind="dynamic")
