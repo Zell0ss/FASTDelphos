@@ -1,5 +1,6 @@
 import pathlib
 
+from cc.extract._collect import collect_py_files
 from cc.extract.endpoints import extract_endpoints
 from cc.extract.models import extract_models
 from cc.extract.calls import extract_calls
@@ -19,9 +20,13 @@ def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
 
     model_nodes, model_edges = extract_models(repo_path, handler_nodes)
     sql_nodes, sql_edges = extract_sql(repo_path)
-    call_edges, call_excluded = extract_calls(repo_path)
+    call_nodes, call_edges, call_excluded, call_coverage = extract_calls(repo_path)
 
-    all_nodes = ep_nodes + model_nodes + sql_nodes
+    # Order matters: build_graph keeps the FIRST node registered per id. Handler
+    # nodes (ep_nodes) and DB-touching nodes (sql_nodes) carry more specific
+    # props (is_handler=True, etc.) than the generic function stub the call
+    # visitor emits for the same id, so they must come first.
+    all_nodes = ep_nodes + model_nodes + sql_nodes + call_nodes
     all_edges = ep_edges + model_edges + sql_edges + call_edges
 
     graph = build_graph(all_nodes, all_edges)
@@ -33,16 +38,12 @@ def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
             kind="tool_limitation",
             where=f"{filepath}:0",
             node_id=None,
-            missing=f"Call graph unavailable for `{rel}` — pyan3 parser error: {error}",
-            suggested=(
-                "Wrap module-level runtime setup in `if __name__ == '__main__':` "
-                "or move it inside a function so static parsers can process the file."
-            ),
+            missing=f"Call graph unavailable for `{rel}` — SyntaxError: {error}",
+            suggested="Fix the syntax error so `ast.parse` can process the file.",
             severity={"comprehension": "warning", "compliance": "error"},
         ))
 
     if call_excluded:
-        from cc.extract._collect import collect_py_files
         total_files = len(collect_py_files(repo_path))
         excluded_count = len(call_excluded)
         print(
@@ -52,5 +53,13 @@ def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
         for filepath, error in call_excluded:
             rel = pathlib.Path(filepath).relative_to(repo_path)
             print(f"    excluded: {rel} — {error}")
+
+    total = call_coverage["total"]
+    print(
+        f"  call graph coverage: {total['resolved_internal']} internal, "
+        f"{total['resolved_external']} external, "
+        f"{total['unresolved_dynamic']} unresolved_dynamic "
+        f"(of {total['call_sites']} call sites across {total['functions']} functions)"
+    )
 
     emit(graph, out_dir)

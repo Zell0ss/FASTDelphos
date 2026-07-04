@@ -44,3 +44,14 @@ def test_pipeline_all_edge_sources_exist():
         for e in data["edges"]:
             assert e["from_"] in node_ids, f"Edge source {e['from_']} has no node"
             assert e["to"] in node_ids, f"Edge target {e['to']} has no node"
+
+
+def test_pipeline_call_edges_have_nodes_on_both_ends():
+    with tempfile.TemporaryDirectory() as d:
+        run(SIMPLE_API, pathlib.Path(d))
+        data = json.loads((pathlib.Path(d) / "graph.json").read_text())
+        node_ids = {n["id"] for n in data["nodes"]}
+        calls_edges = [e for e in data["edges"] if e["type"] == "calls"]
+        for e in calls_edges:
+            assert e["from_"] in node_ids
+            assert e["to"] in node_ids
