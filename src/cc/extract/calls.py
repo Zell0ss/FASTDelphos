@@ -1,94 +1,131 @@
+import ast
 import pathlib
-from pyan.analyzer import CallGraphVisitor
-from cc.graph.schema import Edge
+
+from cc.extract._calls_resolver import build_import_table, build_symbol_inventory, classify_call
 from cc.extract._collect import collect_py_files
+from cc.graph.hash_util import node_hash
+from cc.graph.schema import Edge, Node
 
 
-def _qualname_from_pyan_node(node) -> str | None:
-    s = str(node)
-    # Format: <Node function:module.name> or <Node module:name>
-    if "function:" in s:
-        return s.split("function:")[-1].rstrip(">").strip()
-    return None
+def _module_qualname(file: pathlib.Path, root: pathlib.Path) -> str:
+    rel = file.relative_to(root).with_suffix("")
+    if rel.name == "__init__":
+        rel = rel.parent
+    return str(rel).replace("/", ".").replace("\\", ".")
 
 
-def _probe_file(file: str) -> str | None:
-    """Return error message if this file alone crashes pyan3, else None."""
-    try:
-        v = CallGraphVisitor([file])
-        v.process()
-        v.postprocess()
-        return None
-    except Exception as exc:
-        return str(exc)
+def _iter_named_defs(tree, class_stack=None):
+    """Yield (fn_node, class_stack) for every named function/method.
 
-
-def _run_pyan(
-    files: list[str],
-) -> tuple["CallGraphVisitor | None", list[tuple[str, str]]]:
-    """Run pyan3 on files, auto-excluding any that cause crashes.
-
-    Returns (visitor | None, [(excluded_file, error_message)]).
+    Nested (closure) defs are NOT yielded on their own — their call sites are
+    folded into the nearest enclosing named function via ast.walk(fn_node) in
+    extract_calls, since griffe doesn't track function-local defs as symbols.
     """
-    excluded: dict[str, str] = {}  # file -> error
-    while True:
-        working = [f for f in files if f not in excluded]
-        if not working:
-            return None, list(excluded.items())
-        try:
-            v = CallGraphVisitor(working)
-            v.process()
-            v.postprocess()
-            return v, list(excluded.items())
-        except Exception:
-            # Probe individually to isolate one bad file per iteration
-            bad = next(
-                ((f, err) for f in working
-                 if (err := _probe_file(f)) is not None and f not in excluded),
-                None,
-            )
-            if bad is None:
-                return None, list(excluded.items())
-            excluded[bad[0]] = bad[1]
+    class_stack = class_stack or []
+    for child in ast.iter_child_nodes(tree):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield child, list(class_stack)
+        elif isinstance(child, ast.ClassDef):
+            yield from _iter_named_defs(child, class_stack + [child.name])
+        else:
+            yield from _iter_named_defs(child, class_stack)
+
+
+def _zero_counts() -> dict:
+    return {"functions": 0, "call_sites": 0, "resolved_internal": 0,
+             "resolved_external": 0, "unresolved_dynamic": 0}
 
 
 def extract_calls(
     repo_path: str | pathlib.Path,
-) -> tuple[list[Edge], list[tuple[str, str]]]:
-    """Return (call edges, [(excluded_file, error_msg)]).
+) -> tuple[list[Node], list[Edge], list[tuple[str, str]], dict]:
+    """Return (function nodes, call edges, [(excluded_file, error_msg)], coverage).
 
-    Files that crash pyan3 are excluded and reported rather than silently dropped.
+    coverage = {"per_file": {rel_path: counts}, "total": counts} where
+    counts = {"functions", "call_sites", "resolved_internal",
+              "resolved_external", "unresolved_dynamic"}.
     """
     repo_path = pathlib.Path(repo_path)
-    files = [str(f) for f in collect_py_files(repo_path)]
+    files = collect_py_files(repo_path)
     if not files:
-        return [], []
+        return [], [], [], {"per_file": {}, "total": _zero_counts()}
 
-    visitor, excluded = _run_pyan(files)
-    if visitor is None:
-        return [], excluded
+    inventory = build_symbol_inventory(repo_path)
 
+    nodes: dict[str, Node] = {}
     edges: list[Edge] = []
-    seen: set[tuple[str, str]] = set()
+    seen_edges: set[tuple[str, str]] = set()
+    excluded: list[tuple[str, str]] = []
+    per_file: dict[str, dict] = {}
 
-    for caller_node, callee_set in visitor.uses_edges.items():
-        caller_qname = _qualname_from_pyan_node(caller_node)
-        if not caller_qname:
+    for file in files:
+        source = file.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source, filename=str(file))
+        except SyntaxError as exc:
+            excluded.append((str(file), str(exc)))
             continue
-        for callee_node in callee_set:
-            callee_qname = _qualname_from_pyan_node(callee_node)
-            if not callee_qname:
-                continue
-            if caller_qname == callee_qname:
-                continue
-            key = (caller_qname, callee_qname)
-            if key in seen:
-                continue
-            seen.add(key)
-            edges.append(Edge(
-                from_=f"function:{caller_qname}",
-                to=f"function:{callee_qname}",
-                type="calls", inferred=False, props={},
+
+        module_qname = _module_qualname(file, repo_path)
+        is_package_init = file.name == "__init__.py"
+        import_table = build_import_table(tree, module_qname, is_package_init)
+        rel = str(file.relative_to(repo_path))
+        counts = _zero_counts()
+
+        for fn_node, class_stack in _iter_named_defs(tree):
+            fn_qualname = ".".join([module_qname] + class_stack + [fn_node.name])
+            class_qname = ".".join([module_qname] + class_stack) if class_stack else None
+            counts["functions"] += 1
+
+            caller_id = f"function:{fn_qualname}"
+            end_lineno = fn_node.end_lineno or fn_node.lineno
+            nodes.setdefault(caller_id, Node(
+                id=caller_id, type="function", file=str(file),
+                line=fn_node.lineno,
+                hash=node_hash(file, fn_node.lineno, end_lineno),
+                inferred=False,
+                props={"qualname": fn_qualname, "kind": "method" if class_stack else "function",
+                       "is_handler": False},
             ))
 
-    return edges, excluded
+            for call in ast.walk(fn_node):
+                if not isinstance(call, ast.Call):
+                    continue
+                counts["call_sites"] += 1
+                resolution = classify_call(
+                    call, import_table=import_table, module_qname=module_qname,
+                    class_qname=class_qname, inventory=inventory,
+                )
+                if resolution.kind == "internal":
+                    counts["resolved_internal"] += 1
+                    callee_qname = resolution.qualname
+                    if callee_qname == fn_qualname:
+                        continue  # no self-loops
+                    callee_info = inventory.functions[callee_qname]
+                    callee_id = f"function:{callee_qname}"
+                    nodes.setdefault(callee_id, Node(
+                        id=callee_id, type="function", file=callee_info.file,
+                        line=callee_info.lineno,
+                        hash=node_hash(callee_info.file, callee_info.lineno, callee_info.endlineno),
+                        inferred=False,
+                        props={"qualname": callee_qname, "kind": callee_info.kind,
+                               "is_handler": False},
+                    ))
+                    key = (caller_id, callee_id)
+                    if key not in seen_edges:
+                        seen_edges.add(key)
+                        edges.append(Edge(from_=caller_id, to=callee_id,
+                                           type="calls", inferred=False, props={}))
+                elif resolution.kind == "external":
+                    counts["resolved_external"] += 1
+                else:
+                    counts["unresolved_dynamic"] += 1
+
+        per_file[rel] = counts
+
+    total = _zero_counts()
+    for counts in per_file.values():
+        for k in total:
+            total[k] += counts[k]
+
+    return list(nodes.values()), edges, excluded, {"per_file": per_file, "total": total}
