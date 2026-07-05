@@ -17,7 +17,7 @@
 
     #main { flex: 1; position: relative; display: flex; min-width: 0; }
 
-    #cy { flex: 1; background: #12122a; }
+    #cy { flex: 1; min-width: 0; background: #12122a; }
 
     #placeholder {
       position: absolute; inset: 0; display: flex;
@@ -398,6 +398,7 @@
 
     function showPanel(data) {
       document.getElementById('panel').style.display = 'block';
+      cy.resize();
       document.getElementById('panel-title').textContent = data.id;
 
       const props = { ...data };
