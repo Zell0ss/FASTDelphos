@@ -61,10 +61,6 @@
 
     #panel h3 { margin-top: 0; color: #aad; font-size: 13px; word-break: break-all; }
     #panel pre { background: #12122a; padding: 8px; overflow-x: auto; font-size: 11px; border: 1px solid #333; border-radius: 3px; color: #cde; }
-    .panel-edges { margin-top: 8px; font-size: 11px; }
-    .panel-edges .title { color: #8899bb; margin-bottom: 3px; }
-    .panel-edges .edge-line { margin: 2px 0; font-size: 10px; }
-    .panel-edges .via { font-size: 9px; color: #556; margin-left: 12px; }
 
     #mode-btns { margin-top: auto; padding-top: 12px; display: flex; gap: 6px; }
     #mode-btns button {
@@ -104,6 +100,21 @@
       background: #333; color: #99a;
     }
     .search-kind.field, .search-kind.column { background: #2a3a2a; color: #7c7; }
+
+    .panel-link { color: #7fa8d9; cursor: pointer; text-decoration: underline dotted; }
+    .panel-link:hover { color: #a8c8f0; }
+    .hub-badge {
+      display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 3px;
+      background: #4a2010; color: #ff9944; margin-bottom: 6px;
+    }
+    .panel-toggle { display: block; font-size: 10px; color: #778; margin: 2px 0; cursor: pointer; }
+    .panel-props { font-size: 11px; margin: 6px 0; }
+    .panel-fileline { font-size: 10px; color: #8899bb; margin: 6px 0; user-select: text; }
+    .neighbor-line { font-size: 11px; margin: 4px 0; }
+    .neighbor-line b { color: #8899bb; font-weight: normal; }
+    .neighbor-line .more { color: #556; font-size: 10px; }
+    .neighbor-line .via { font-size: 9px; color: #667; margin-left: 2px; }
+    .panel-raw { margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -206,6 +217,18 @@
       return SEARCH_INDEX.filter(e => e.matchText.toLowerCase().includes(q));
     }
 
+    // ── Hub detection ────────────────────────────────────────────────────────
+    const HUB_MIN_PERCENT  = 0.15;
+    const HUB_MIN_ABSOLUTE = 5;
+    const functionCount = GRAPH.nodes.filter(n => n.type === 'function').length;
+    const hubThreshold = Math.max(HUB_MIN_ABSOLUTE, Math.ceil(HUB_MIN_PERCENT * functionCount));
+    const HUB_IDS = new Set(
+      GRAPH.nodes.filter(n => (edgesTo[n.id] || []).length >= hubThreshold).map(n => n.id)
+    );
+
+    // ── Hidden nodes (in-memory only — F5 is the undo) ──────────────────────────
+    const hiddenNodes = new Set();
+
     // ── State ─────────────────────────────────────────────────────────────────
     let currentMode  = null;
     let currentRoot  = null;
@@ -250,15 +273,20 @@
     function makeElems(nodeIds, rootId) {
       const elems = [];
       for (const id of nodeIds) {
+        if (hiddenNodes.has(id)) continue;
         const n = nodeById[id];
         if (!n) continue;
         elems.push({
-          data: { id: n.id, label: n.id.split(':').slice(1).join(':'), type: n.type, inferred: n.inferred, ...n.props },
+          data: {
+            id: n.id, label: n.id.split(':').slice(1).join(':'), type: n.type,
+            inferred: n.inferred, file: n.file, line: n.line, ...n.props,
+          },
           classes: [n.inferred ? 'inferred' : '', id === rootId ? 'root-node' : ''].join(' ').trim(),
         });
       }
       for (const e of GRAPH.edges) {
-        if (nodeIds.has(e.from_) && nodeIds.has(e.to))
+        if (nodeIds.has(e.from_) && nodeIds.has(e.to) &&
+            !hiddenNodes.has(e.from_) && !hiddenNodes.has(e.to))
           elems.push({ data: { id: e.from_ + '→' + e.to, source: e.from_, target: e.to, label: e.type, ...e.props } });
       }
       return elems;
@@ -275,6 +303,30 @@
         }
       }
       return visited;
+    }
+
+    // ── Reverse BFS: which endpoints can reach this node, stopping at hubs ──────
+    function reachableFromEndpoints(targetId) {
+      const visited     = new Set([targetId]);
+      const queue        = [targetId];
+      const endpointIds  = new Set();
+      const stoppedHubs  = new Set();
+
+      while (queue.length) {
+        const curr = queue.shift();
+        for (const e of (edgesTo[curr] || [])) {
+          const prev = e.from_;
+          if (visited.has(prev)) continue;
+          visited.add(prev);
+
+          const prevNode = nodeById[prev];
+          if (prevNode && prevNode.type === 'endpoint') endpointIds.add(prev);
+
+          if (HUB_IDS.has(prev)) { stoppedHubs.add(prev); continue; }
+          queue.push(prev);
+        }
+      }
+      return { endpointIds: [...endpointIds], stoppedHubs: [...stoppedHubs] };
     }
 
     // ── Layout ────────────────────────────────────────────────────────────────
@@ -400,38 +452,141 @@
       document.getElementById('panel').style.display = 'block';
       cy.resize();
       document.getElementById('panel-title').textContent = data.id;
-
-      const props = { ...data };
-      delete props.id; delete props.label; delete props.type; delete props.inferred;
-
-      const outEdges = GRAPH.edges.filter(e => e.from_ === data.id);
-      const inEdges  = GRAPH.edges.filter(e => e.to   === data.id);
-
-      let html = '<pre>' + JSON.stringify(props, null, 2) + '</pre>';
-
-      if (outEdges.length) {
-        html += '<div class="panel-edges"><div class="title">Sale →</div>';
-        for (const e of outEdges) {
-          const color = EDGE_COLORS[e.type] || '#aaa';
-          html += `<div class="edge-line"><span style="color:${color}">${e.type}</span> → ${short(e.to)}`;
-          if (e.props && e.props.via) html += `<div class="via">via ${e.props.via}</div>`;
-          html += '</div>';
-        }
-        html += '</div>';
-      }
-      if (inEdges.length) {
-        html += '<div class="panel-edges"><div class="title">← Entra</div>';
-        for (const e of inEdges) {
-          const color = EDGE_COLORS[e.type] || '#aaa';
-          html += `<div class="edge-line">${short(e.from_)} <span style="color:${color}">${e.type}</span> →</div>`;
-        }
-        html += '</div>';
-      }
-
-      document.getElementById('panel-body').innerHTML = html;
+      document.getElementById('panel-body').innerHTML = renderPanelBody(data);
     }
 
     function short(id) { return id.split(':').slice(1).join(':'); }
+
+    function renderProps(data) {
+      if (data.type === 'endpoint') {
+        return (
+          `<div>${data.method} ${data.path}</div>` +
+          `<div>handler: <span class="panel-link" data-nav="function:${data.handler}">${data.handler}</span></div>`
+        );
+      }
+      if (data.type === 'function') {
+        return `<div>${data.qualname}${data.is_handler ? ' · es handler' : ''}</div>`;
+      }
+      if (data.type === 'model') {
+        const fields = (data.fields || []);
+        if (!fields.length) return '<div style="color:#556">(sin campos)</div>';
+        return fields.map(f => `<div>${f.name}: ${f.type}</div>`).join('');
+      }
+      if (data.type === 'table') {
+        const columns = data.columns || [];
+        if (!columns.length) {
+          return '<div class="gap-item gap-warning">⚠ columnas desconocidas — falta DDL</div>';
+        }
+        return columns.map(c => `<div>${c}</div>`).join('');
+      }
+      return '';
+    }
+
+    const NEIGHBOR_LABELS = {
+      'calls:out':      'Llama a',
+      'calls:in':       'Llamada por',
+      'handles:out':    'Maneja',
+      'handles:in':     'Manejado por',
+      'uses_model:out': 'Usa modelo',
+      'reads:out':      'Lee',
+      'writes:out':     'Escribe en',
+      'reads:in':       'Leída por',
+      'writes:in':      'Escrita por',
+    };
+
+    function renderNeighborGroupLine(label, items) {
+      const CAP   = 5;
+      const shown = items.slice(0, CAP);
+      const extra = items.length - shown.length;
+      const parts = shown.map(it => {
+        const via = it.via ? ` <span class="via">via ${it.via}</span>` : '';
+        return `<span class="panel-link" data-nav="${it.targetId}">${short(it.targetId)}</span>${via}`;
+      });
+      let line = `<div class="neighbor-line"><b>${label}:</b> ${parts.join(', ')}`;
+      if (extra > 0) line += ` <span class="more">(+${extra} más)</span>`;
+      line += '</div>';
+      return line;
+    }
+
+    function renderNeighborhood(nodeId) {
+      const outByType = {}, inByType = {};
+      for (const e of (edgesFrom[nodeId] || [])) {
+        (outByType[e.type] = outByType[e.type] || []).push({ targetId: e.to, via: e.props && e.props.via });
+      }
+      for (const e of (edgesTo[nodeId] || [])) {
+        (inByType[e.type] = inByType[e.type] || []).push({ targetId: e.from_, via: e.props && e.props.via });
+      }
+
+      let html = '';
+      for (const [type, items] of Object.entries(outByType)) {
+        const label = NEIGHBOR_LABELS[`${type}:out`];
+        if (label) html += renderNeighborGroupLine(label, items);
+      }
+      for (const [type, items] of Object.entries(inByType)) {
+        const label = NEIGHBOR_LABELS[`${type}:in`];
+        if (label) html += renderNeighborGroupLine(label, items);
+      }
+      return html;
+    }
+
+    function renderReachableFrom(data) {
+      if (data.type === 'endpoint') return '';
+      const { endpointIds, stoppedHubs } = reachableFromEndpoints(data.id);
+      if (!endpointIds.length) return '';
+
+      const links = endpointIds.map(id => {
+        const ep = nodeById[id];
+        const label = ep ? `${ep.props.method} ${ep.props.path}` : short(id);
+        return `<span class="panel-link" data-nav="${id}">${label}</span>`;
+      }).join(', ');
+
+      let hubNote = '';
+      if (stoppedHubs.length) {
+        const names = stoppedHubs.map(id => short(id)).join(', ');
+        const plural = stoppedHubs.length > 1 ? 's' : '';
+        hubNote = ` <span class="via">(cálculo excluye ${stoppedHubs.length} hub${plural}: ${names})</span>`;
+      }
+      return `<div class="neighbor-line"><b>Alcanzable desde:</b> ${links}${hubNote}</div>`;
+    }
+
+    function renderPanelBody(data) {
+      const hubBadge = HUB_IDS.has(data.id)
+        ? `<span class="hub-badge">⚠ hub — ${(edgesTo[data.id] || []).length} llamantes</span>`
+        : '';
+
+      const props = { ...data };
+      delete props.id; delete props.label; delete props.type; delete props.inferred;
+      const rawJson = JSON.stringify(props, null, 2);
+
+      return (
+        hubBadge +
+        `<label class="panel-toggle"><input type="checkbox" onchange="togglePanelRaw(this.checked)"> ver raw</label>` +
+        `<label class="panel-toggle"><input type="checkbox" onchange="toggleHideNode('${data.id}', this.checked)"> ocultar este nodo</label>` +
+        `<div class="panel-props">${renderProps(data)}</div>` +
+        `<div class="panel-fileline">${data.file || ''}:${data.line || ''}</div>` +
+        renderNeighborhood(data.id) +
+        renderReachableFrom(data) +
+        `<pre class="panel-raw" style="display:none">${rawJson}</pre>`
+      );
+    }
+
+    function togglePanelRaw(show) {
+      const pre = document.querySelector('#panel-body .panel-raw');
+      if (pre) pre.style.display = show ? 'block' : 'none';
+    }
+
+    function toggleHideNode(nodeId, hide) {
+      if (!hide) return;
+      hiddenNodes.add(nodeId);
+      cy.getElementById(nodeId).remove();
+      document.getElementById('panel').style.display = 'none';
+    }
+
+    document.getElementById('panel-body').addEventListener('click', evt => {
+      const link = evt.target.closest('[data-nav]');
+      if (!link) return;
+      goToSearchResult({ nodeId: link.dataset.nav });
+    });
 
     // ── Placeholder ───────────────────────────────────────────────────────────
     function hidePlaceholder() { document.getElementById('placeholder').style.display = 'none'; }

@@ -79,3 +79,16 @@ def test_html_includes_search_ui():
         assert "function buildSearchIndex" in html
         assert "function searchGraph" in html
         assert "function goToSearchResult" in html
+
+
+def test_html_includes_node_panel_features():
+    with tempfile.TemporaryDirectory() as d:
+        emit(_minimal_graph(), pathlib.Path(d))
+        html = (pathlib.Path(d) / "index.html").read_text()
+        assert "function renderPanelBody" in html
+        assert "function renderProps" in html
+        assert "function renderNeighborhood" in html
+        assert "function reachableFromEndpoints" in html
+        assert "function toggleHideNode" in html
+        assert "function togglePanelRaw" in html
+        assert "HUB_MIN_PERCENT" in html
