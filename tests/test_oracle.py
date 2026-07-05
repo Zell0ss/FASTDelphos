@@ -1,4 +1,5 @@
 import sys
+
 from cc.extract.endpoints import extract_endpoints
 from cc.oracle import compare_oracle
 from tests.conftest import SIMPLE_API

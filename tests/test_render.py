@@ -7,13 +7,31 @@ from cc.render.emit import emit
 
 
 def _minimal_graph():
-    ep = Node(id="endpoint:GET:/hello", type="endpoint", file="main.py", line=1,
-              hash="a" * 64, inferred=False,
-              props={"method": "GET", "path": "/hello", "handler": "main.hello"})
-    fn = Node(id="function:main.hello", type="function", file="main.py", line=1,
-              hash="a" * 64, inferred=False, props={"qualname": "main.hello"})
-    e = Edge(from_="endpoint:GET:/hello", to="function:main.hello",
-              type="handles", inferred=False, props={})
+    ep = Node(
+        id="endpoint:GET:/hello",
+        type="endpoint",
+        file="main.py",
+        line=1,
+        hash="a" * 64,
+        inferred=False,
+        props={"method": "GET", "path": "/hello", "handler": "main.hello"},
+    )
+    fn = Node(
+        id="function:main.hello",
+        type="function",
+        file="main.py",
+        line=1,
+        hash="a" * 64,
+        inferred=False,
+        props={"qualname": "main.hello"},
+    )
+    e = Edge(
+        from_="endpoint:GET:/hello",
+        to="function:main.hello",
+        type="handles",
+        inferred=False,
+        props={},
+    )
     return Graph(nodes=[ep, fn], edges=[e], gaps=[])
 
 

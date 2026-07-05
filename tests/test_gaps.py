@@ -1,11 +1,17 @@
-from cc.graph.schema import Graph, Node
 from cc.gaps import detect_gaps
+from cc.graph.schema import Graph, Node
 
 
 def test_table_without_columns_is_a_gap():
-    table_node = Node(id="table:messages", type="table", file="db.py", line=1,
-                      hash="x" * 64, inferred=False,
-                      props={"name": "messages", "columns": []})
+    table_node = Node(
+        id="table:messages",
+        type="table",
+        file="db.py",
+        line=1,
+        hash="x" * 64,
+        inferred=False,
+        props={"name": "messages", "columns": []},
+    )
     graph = Graph(nodes=[table_node], edges=[], gaps=[])
     gaps = detect_gaps(graph)
     assert len(gaps) == 1
@@ -14,9 +20,15 @@ def test_table_without_columns_is_a_gap():
 
 
 def test_table_with_columns_has_no_gap():
-    table_node = Node(id="table:messages", type="table", file="db.py", line=1,
-                      hash="x" * 64, inferred=False,
-                      props={"name": "messages", "columns": ["id", "content"]})
+    table_node = Node(
+        id="table:messages",
+        type="table",
+        file="db.py",
+        line=1,
+        hash="x" * 64,
+        inferred=False,
+        props={"name": "messages", "columns": ["id", "content"]},
+    )
     graph = Graph(nodes=[table_node], edges=[], gaps=[])
     gaps = detect_gaps(graph)
     assert len(gaps) == 0

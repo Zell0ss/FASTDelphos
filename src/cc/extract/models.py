@@ -4,9 +4,8 @@ import sys
 
 import griffe
 
-from cc.graph.schema import Edge, Node
 from cc.graph.hash_util import node_hash
-
+from cc.graph.schema import Edge, Node
 
 _SKIP_DIRS = {".venv", "__pycache__", ".git", "node_modules", ".tox", "dist", "build", "tests"}
 
@@ -107,8 +106,12 @@ def extract_models(
         m_hash = node_hash(file_path, lineno, end_lineno)
         fields = _griffe_fields(cls)
         model_nodes[short_name] = Node(
-            id=m_id, type="model", file=str(file_path),
-            line=lineno, hash=m_hash, inferred=False,
+            id=m_id,
+            type="model",
+            file=str(file_path),
+            line=lineno,
+            hash=m_hash,
+            inferred=False,
             props={"name": short_name, "kind": "request", "fields": fields},
         )
 
@@ -136,18 +139,26 @@ def extract_models(
             for arg in node.args.args + node.args.kwonlyargs:
                 for type_name in _annotation_names(arg.annotation):
                     if type_name in model_nodes:
-                        edges.append(Edge(
-                            from_=fn_node.id, to=model_nodes[type_name].id,
-                            type="uses_model", inferred=False,
-                            props={"direction": "in"},
-                        ))
+                        edges.append(
+                            Edge(
+                                from_=fn_node.id,
+                                to=model_nodes[type_name].id,
+                                type="uses_model",
+                                inferred=False,
+                                props={"direction": "in"},
+                            )
+                        )
             # Return annotation → direction=out
             for type_name in _annotation_names(node.returns):
                 if type_name in model_nodes:
-                    edges.append(Edge(
-                        from_=fn_node.id, to=model_nodes[type_name].id,
-                        type="uses_model", inferred=False,
-                        props={"direction": "out"},
-                    ))
+                    edges.append(
+                        Edge(
+                            from_=fn_node.id,
+                            to=model_nodes[type_name].id,
+                            type="uses_model",
+                            inferred=False,
+                            props={"direction": "out"},
+                        )
+                    )
 
     return list(model_nodes.values()), edges

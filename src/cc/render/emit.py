@@ -19,9 +19,7 @@ def emit(graph: Graph, out_dir: str | pathlib.Path) -> None:
 
     cytoscape_js = _CYTOSCAPE.read_text(encoding="utf-8")
     template = _TEMPLATE_SRC.read_text(encoding="utf-8")
-    html = (
-        template
-        .replace("__CYTOSCAPE_JS__", cytoscape_js)
-        .replace("__GRAPH_JSON__", json.dumps(graph_dict))
+    html = template.replace("__CYTOSCAPE_JS__", cytoscape_js).replace(
+        "__GRAPH_JSON__", json.dumps(graph_dict)
     )
     (out_dir / "index.html").write_text(html, encoding="utf-8")

@@ -5,9 +5,9 @@ from collections import defaultdict
 import sqlglot
 import sqlglot.expressions as exp
 
-from cc.graph.schema import Edge, Node
-from cc.graph.hash_util import node_hash
 from cc.extract._collect import collect_py_files
+from cc.graph.hash_util import node_hash
+from cc.graph.schema import Edge, Node
 
 _DB_METHODS = {"execute", "executemany", "fetchone", "fetchall", "fetchmany"}
 
@@ -100,7 +100,9 @@ def extract_sql(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
     repo_path = pathlib.Path(repo_path)
     table_columns: dict[str, set[str]] = defaultdict(set)
     table_files: dict[str, tuple[str, int]] = {}  # table -> (file, line)
-    raw_edges: list[tuple[str, str, str, str, str, int]] = []  # (fn_qname, table, op, via, file, lineno)
+    raw_edges: list[
+        tuple[str, str, str, str, str, int]
+    ] = []  # (fn_qname, table, op, via, file, lineno)
 
     for file in collect_py_files(repo_path):
         source = file.read_text(encoding="utf-8")
@@ -189,12 +191,14 @@ def extract_sql(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
     for fn_qname, tbl, op, via, _edge_file, _edge_lineno in raw_edges:
         if tbl not in table_nodes:
             continue
-        edges.append(Edge(
-            from_=f"function:{fn_qname}",
-            to=f"table:{tbl}",
-            type=op,
-            inferred=False,
-            props={"via": via},
-        ))
+        edges.append(
+            Edge(
+                from_=f"function:{fn_qname}",
+                to=f"table:{tbl}",
+                type=op,
+                inferred=False,
+                props={"via": via},
+            )
+        )
 
     return list(table_nodes.values()) + list(fn_nodes.values()), edges

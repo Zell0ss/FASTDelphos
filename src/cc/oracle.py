@@ -20,6 +20,7 @@ def _pkg_names(repo_path: pathlib.Path) -> list[str]:
 def _repo_site_packages(repo_path: pathlib.Path) -> list[str]:
     """Find the target repo's .venv site-packages paths, if present."""
     import sys as _sys
+
     ver = f"python{_sys.version_info.major}.{_sys.version_info.minor}"
     candidates = [
         repo_path / ".venv" / "lib" / ver / "site-packages",

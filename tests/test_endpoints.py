@@ -10,8 +10,7 @@ def test_finds_two_endpoints():
 
 def test_endpoint_methods_and_paths():
     nodes, edges = extract_endpoints(SIMPLE_API)
-    ep_nodes = {n.props["method"] + " " + n.props["path"]: n
-                for n in nodes if n.type == "endpoint"}
+    ep_nodes = {n.props["method"] + " " + n.props["path"]: n for n in nodes if n.type == "endpoint"}
     assert "POST /messages/" in ep_nodes
     assert "GET /messages/{msg_id}" in ep_nodes
 

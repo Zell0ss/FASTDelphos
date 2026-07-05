@@ -1,9 +1,9 @@
 import pathlib
 
 from cc.extract._collect import collect_py_files
+from cc.extract.calls import extract_calls
 from cc.extract.endpoints import extract_endpoints
 from cc.extract.models import extract_models
-from cc.extract.calls import extract_calls
 from cc.extract.sql import extract_sql
 from cc.gaps import detect_gaps
 from cc.graph.build import build_graph
@@ -34,14 +34,16 @@ def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
 
     for filepath, error in call_excluded:
         rel = pathlib.Path(filepath).relative_to(repo_path)
-        graph.gaps.append(Gap(
-            kind="tool_limitation",
-            where=f"{filepath}:0",
-            node_id=None,
-            missing=f"Call graph unavailable for `{rel}` — SyntaxError: {error}",
-            suggested="Fix the syntax error so `ast.parse` can process the file.",
-            severity={"comprehension": "warning", "compliance": "error"},
-        ))
+        graph.gaps.append(
+            Gap(
+                kind="tool_limitation",
+                where=f"{filepath}:0",
+                node_id=None,
+                missing=f"Call graph unavailable for `{rel}` — SyntaxError: {error}",
+                suggested="Fix the syntax error so `ast.parse` can process the file.",
+                severity={"comprehension": "warning", "compliance": "error"},
+            )
+        )
 
     if call_excluded:
         total_files = len(collect_py_files(repo_path))

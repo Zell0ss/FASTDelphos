@@ -1,5 +1,5 @@
-from cc.graph.schema import Edge, Gap, Graph, Node
 from cc.graph.hash_util import node_hash
+from cc.graph.schema import Edge, Gap, Graph, Node
 from tests.conftest import SIMPLE_API
 
 

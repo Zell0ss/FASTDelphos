@@ -1,8 +1,9 @@
 import ast
 import pathlib
-from cc.graph.schema import Edge, Node
-from cc.graph.hash_util import node_hash
+
 from cc.extract._collect import collect_py_files
+from cc.graph.hash_util import node_hash
+from cc.graph.schema import Edge, Node
 
 _HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
 
@@ -34,8 +35,10 @@ def _collect_router_prefixes(tree: ast.Module) -> dict[str, str]:
         if not isinstance(node.value, ast.Call):
             continue
         func = node.value.func
-        name = func.id if isinstance(func, ast.Name) else (
-            func.attr if isinstance(func, ast.Attribute) else None
+        name = (
+            func.id
+            if isinstance(func, ast.Name)
+            else (func.attr if isinstance(func, ast.Attribute) else None)
         )
         if name != "APIRouter":
             continue
@@ -92,11 +95,7 @@ def extract_endpoints(repo_path: str | pathlib.Path) -> tuple[list[Node], list[E
                 method = dec.func.attr.lower()
                 if method not in _HTTP_METHODS:
                     continue
-                router_var = (
-                    dec.func.value.id
-                    if isinstance(dec.func.value, ast.Name)
-                    else None
-                )
+                router_var = dec.func.value.id if isinstance(dec.func.value, ast.Name) else None
                 if not dec.args:
                     continue
                 path_suffix = _str_const(dec.args[0])
@@ -115,19 +114,24 @@ def extract_endpoints(repo_path: str | pathlib.Path) -> tuple[list[Node], list[E
                 fn_hash = ep_hash  # same source span
 
                 ep_node = Node(
-                    id=ep_id, type="endpoint", file=str(file),
-                    line=fn_node.lineno, hash=ep_hash, inferred=False,
-                    props={"method": method.upper(), "path": full_path,
-                           "handler": handler_qname},
+                    id=ep_id,
+                    type="endpoint",
+                    file=str(file),
+                    line=fn_node.lineno,
+                    hash=ep_hash,
+                    inferred=False,
+                    props={"method": method.upper(), "path": full_path, "handler": handler_qname},
                 )
                 fn_node_obj = Node(
-                    id=fn_id, type="function", file=str(file),
-                    line=fn_node.lineno, hash=fn_hash, inferred=False,
-                    props={"qualname": handler_qname, "kind": "function",
-                           "is_handler": True},
+                    id=fn_id,
+                    type="function",
+                    file=str(file),
+                    line=fn_node.lineno,
+                    hash=fn_hash,
+                    inferred=False,
+                    props={"qualname": handler_qname, "kind": "function", "is_handler": True},
                 )
-                edge = Edge(from_=ep_id, to=fn_id, type="handles",
-                            inferred=False, props={})
+                edge = Edge(from_=ep_id, to=fn_id, type="handles", inferred=False, props={})
 
                 nodes.extend([ep_node, fn_node_obj])
                 edges.append(edge)

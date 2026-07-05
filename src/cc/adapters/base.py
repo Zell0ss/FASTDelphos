@@ -1,5 +1,5 @@
-from typing import Protocol
 import pathlib
+from typing import Protocol
 
 
 class Adapter(Protocol):
