@@ -153,3 +153,60 @@ def test_unknown_filepath_callee_does_not_crash(tmp_path, monkeypatch):
     nodes, edges, excluded, coverage = extract_calls(tmp_path)
     assert edges == []  # skipped, not crashed
     assert coverage["total"]["call_sites"] >= 1
+
+
+def test_case_2b_function_scope_alias_resolves_as_external(tmp_path):
+    (tmp_path / "mod.py").write_text(
+        "import re\n\n\n"
+        "def f(text):\n"
+        "    match = re.search('x', text)\n"
+        "    return match.group(1)\n",
+        encoding="utf-8",
+    )
+    _, edges, _, coverage = extract_calls(tmp_path)
+    froms = {e.from_ for e in edges}
+    assert "function:mod.f" not in froms  # no internal edge — both calls are external
+    per_file = coverage["per_file"]["mod.py"]
+    assert per_file["resolved_external"] == 2  # re.search(...) and match.group(...)
+    assert per_file["unresolved_dynamic"] == 0
+
+
+def test_case_2b_module_scope_alias_resolves_as_external(tmp_path):
+    (tmp_path / "mod.py").write_text(
+        "import anthropic\n\n"
+        "client = anthropic.AsyncAnthropic()\n\n\n"
+        "def call_a(prompt):\n"
+        "    return client.messages.stream(prompt)\n\n\n"
+        "def call_b(prompt):\n"
+        "    return client.messages.create(prompt)\n",
+        encoding="utf-8",
+    )
+    _, edges, _, coverage = extract_calls(tmp_path)
+    per_file = coverage["per_file"]["mod.py"]
+    # anthropic.AsyncAnthropic() itself (module-level, not inside any function,
+    # so not counted in any function's call_sites) + 2 function bodies each with
+    # one external call through the module-level alias.
+    assert per_file["resolved_external"] == 2
+    assert per_file["unresolved_dynamic"] == 0
+
+
+def test_case_2b_local_reassignment_shadows_module_alias(tmp_path):
+    (tmp_path / "mod.py").write_text(
+        "import anthropic\n\n"
+        "client = anthropic.AsyncAnthropic()\n\n\n"
+        "def uses_module_client(prompt):\n"
+        "    return client.messages.stream(prompt)\n\n\n"
+        "def uses_local_client(prompt, local_client):\n"
+        "    client = local_client\n"
+        "    return client.messages.stream(prompt)\n",
+        encoding="utf-8",
+    )
+    _, edges, _, coverage = extract_calls(tmp_path)
+    per_file = coverage["per_file"]["mod.py"]
+    # uses_module_client's call resolves external via the module alias.
+    # uses_local_client's call must NOT inherit the module alias — its own
+    # `client = local_client` (non-qualifying: local_client isn't an import)
+    # shadows it, so that call falls to dynamic instead of being wrongly
+    # classified external.
+    assert per_file["resolved_external"] == 1
+    assert per_file["unresolved_dynamic"] == 1

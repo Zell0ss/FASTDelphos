@@ -482,3 +482,34 @@ def test_nested_closures_own_binding_is_not_attributed_to_outer():
     )
     aliases = build_local_alias_table(fn, table, "pkg.mod", None, inv)
     assert aliases == {}
+
+
+from cc.extract._calls_resolver import local_assignment_targets
+
+
+def test_local_assignment_targets_finds_simple_name_targets():
+    fn = _parse_fn(
+        "def f():\n"
+        "    client = None\n"
+        "    x = 1\n"
+        "    return client\n"
+    )
+    assert local_assignment_targets(fn) == {"client", "x"}
+
+
+def test_local_assignment_targets_ignores_nested_def_scope():
+    fn = _parse_fn(
+        "def f():\n"
+        "    def inner():\n"
+        "        client = None\n"
+        "    return 1\n"
+    )
+    assert local_assignment_targets(fn) == set()
+
+
+def test_local_assignment_targets_empty_when_nothing_assigned():
+    fn = _parse_fn(
+        "def f():\n"
+        "    return 1\n"
+    )
+    assert local_assignment_targets(fn) == set()

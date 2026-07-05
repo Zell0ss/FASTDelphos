@@ -334,3 +334,18 @@ def build_local_alias_table(
         for name, values in seen.items()
         if len(values) == 1 and next(iter(values)) != "\x00other"
     }
+
+
+def local_assignment_targets(fn_node: ast.AST) -> set[str]:
+    """Names assigned via a simple `name = ...` anywhere in fn_node's own scope,
+    regardless of whether the assignment qualifies as an external alias.
+
+    Used so a function's own (possibly non-qualifying) rebinding of a name
+    shadows any module-level alias for that same name — matching real Python
+    scoping, where a local assignment always shadows an outer/global binding.
+    """
+    names: set[str] = set()
+    for node in _own_scope_assign_nodes(fn_node):
+        if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            names.add(node.targets[0].id)
+    return names

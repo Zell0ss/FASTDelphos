@@ -1,7 +1,13 @@
 import ast
 import pathlib
 
-from cc.extract._calls_resolver import build_import_table, build_symbol_inventory, classify_call
+from cc.extract._calls_resolver import (
+    build_import_table,
+    build_local_alias_table,
+    build_symbol_inventory,
+    classify_call,
+    local_assignment_targets,
+)
 from cc.extract._collect import collect_py_files
 from cc.graph.hash_util import node_hash
 from cc.graph.schema import Edge, Node
@@ -74,12 +80,32 @@ def extract_calls(
         module_qname = _module_qualname(file, repo_path)
         is_package_init = file.name == "__init__.py"
         import_table = build_import_table(tree, module_qname, is_package_init)
+        module_aliases = build_local_alias_table(
+            tree,
+            import_table,
+            module_qname,
+            None,
+            inventory,
+        )
         rel = str(file.relative_to(repo_path))
         counts = _zero_counts()
 
         for fn_node, class_stack in _iter_named_defs(tree):
             fn_qualname = ".".join([module_qname] + class_stack + [fn_node.name])
             class_qname = ".".join([module_qname] + class_stack) if class_stack else None
+            local_aliases = build_local_alias_table(
+                fn_node,
+                import_table,
+                module_qname,
+                class_qname,
+                inventory,
+            )
+            shadowed = local_assignment_targets(fn_node)
+            effective_table = {
+                **import_table,
+                **{k: v for k, v in module_aliases.items() if k not in shadowed},
+                **local_aliases,
+            }
             counts["functions"] += 1
 
             caller_id = f"function:{fn_qualname}"
@@ -107,7 +133,7 @@ def extract_calls(
                 counts["call_sites"] += 1
                 resolution = classify_call(
                     call,
-                    import_table=import_table,
+                    import_table=effective_table,
                     module_qname=module_qname,
                     class_qname=class_qname,
                     inventory=inventory,
