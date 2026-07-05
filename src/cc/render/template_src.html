@@ -307,7 +307,7 @@
       applyLayout(false);
       cy.fit(cy.elements(), 40);
       hidePlaceholder();
-      document.getElementById('expand-hint').style.display = '';
+      document.getElementById('expand-hint').style.display = 'block';
     }
 
     // ── Search navigation ─────────────────────────────────────────────────────
@@ -343,7 +343,7 @@
       applyLayout(false);
       cy.fit(cy.elements(), 40);
       hidePlaceholder();
-      document.getElementById('expand-hint').style.display = '';
+      document.getElementById('expand-hint').style.display = 'block';
 
       const added = cy.getElementById(nodeId);
       flashNode(added);
@@ -397,7 +397,7 @@
     cy.on('tap', 'node', evt => showPanel(evt.target.data()));
 
     function showPanel(data) {
-      document.getElementById('panel').style.display = '';
+      document.getElementById('panel').style.display = 'block';
       document.getElementById('panel-title').textContent = data.id;
 
       const props = { ...data };
@@ -493,7 +493,7 @@
 
       if (!matches.length) {
         dd.innerHTML = '<div class="search-row no-results">sin resultados</div>';
-        dd.style.display = '';
+        dd.style.display = 'block';
         return;
       }
 
@@ -503,7 +503,7 @@
         `<span class="search-kind ${m.kind}">${kindLabel[m.kind]}</span>` +
         `<span>${m.label}</span></div>`
       ).join('');
-      dd.style.display = '';
+      dd.style.display = 'block';
 
       dd.querySelectorAll('.search-row[data-idx]').forEach(row => {
         row.onclick = () => {
