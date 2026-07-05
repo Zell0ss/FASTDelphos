@@ -7,6 +7,7 @@ from cc.graph.schema import Graph
 _RENDER_DIR = pathlib.Path(__file__).parent
 _TEMPLATE_SRC = _RENDER_DIR / "template_src.html"
 _CYTOSCAPE = _RENDER_DIR / "cytoscape.min.js"
+_CYTOSCAPE_DAGRE = _RENDER_DIR / "cytoscape-dagre.min.js"
 
 
 def emit(graph: Graph, out_dir: str | pathlib.Path) -> None:
@@ -18,8 +19,11 @@ def emit(graph: Graph, out_dir: str | pathlib.Path) -> None:
     json_path.write_text(json.dumps(graph_dict, indent=2), encoding="utf-8")
 
     cytoscape_js = _CYTOSCAPE.read_text(encoding="utf-8")
+    cytoscape_dagre_js = _CYTOSCAPE_DAGRE.read_text(encoding="utf-8")
     template = _TEMPLATE_SRC.read_text(encoding="utf-8")
-    html = template.replace("__CYTOSCAPE_JS__", cytoscape_js).replace(
-        "__GRAPH_JSON__", json.dumps(graph_dict)
+    html = (
+        template.replace("__CYTOSCAPE_JS__", cytoscape_js)
+        .replace("__CYTOSCAPE_DAGRE_JS__", cytoscape_dagre_js)
+        .replace("__GRAPH_JSON__", json.dumps(graph_dict))
     )
     (out_dir / "index.html").write_text(html, encoding="utf-8")

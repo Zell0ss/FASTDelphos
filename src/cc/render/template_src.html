@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Comprehension Compiler</title>
   <script>__CYTOSCAPE_JS__</script>
+  <script>__CYTOSCAPE_DAGRE_JS__</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body { margin: 0; font-family: monospace; display: flex; height: 100vh; background: #1a1a2e; color: #e0e0e0; overflow: hidden; }
@@ -215,9 +216,8 @@
       const opts = currentMode === 'map'
         ? { name: 'cose', animate, animationDuration: 300 }
         : {
-            name: 'breadthfirst', directed: true,
-            roots: currentRoot ? cy.getElementById(currentRoot) : undefined,
-            padding: 30, spacingFactor: 1.4,
+            name: 'dagre', rankDir: 'TB',
+            padding: 30,
             animate, animationDuration: 300,
           };
       cy.layout(opts).run();
