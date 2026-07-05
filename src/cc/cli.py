@@ -24,6 +24,18 @@ def main() -> None:
         help="Compare static extraction vs. runtime introspection "
         "(only for repos that boot without infra)",
     )
+    comp.add_argument(
+        "--serve",
+        action="store_true",
+        help="Serve --out over HTTP on 127.0.0.1 after compiling (Ctrl+C to stop) "
+        "— for viewing via an SSH port forward (e.g. VS Code Remote-SSH)",
+    )
+    comp.add_argument(
+        "--port",
+        type=int,
+        default=8642,
+        help="Port for --serve (default: 8642)",
+    )
 
     args = parser.parse_args()
 
@@ -52,6 +64,10 @@ def main() -> None:
             )
             if result.get("missing"):
                 print("Missing from static:", result["missing"])
+        if args.serve:
+            from cc.serve import serve_directory
+
+            serve_directory(args.out, args.port)
 
 
 if __name__ == "__main__":
