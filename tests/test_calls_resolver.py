@@ -448,3 +448,37 @@ def test_non_call_or_non_attribute_rhs_is_not_tracked():
     )
     aliases = build_local_alias_table(fn, {}, "pkg.mod", None, inv)
     assert aliases == {}
+
+
+def test_nested_closures_own_binding_does_not_shadow_outer_alias():
+    # Scenario A: `inner`'s own `client = local_helper.Thing()` is a binding in
+    # inner's own scope, not outer's. It must not be conflated with outer's
+    # single, genuinely-consistent `client = anthropic.AsyncAnthropic()`.
+    inv = _inventory_with(top_level={"services"})
+    table = {"anthropic": "anthropic", "local_helper": "services.local_helper"}
+    fn = _parse_fn(
+        "def outer():\n"
+        "    def inner():\n"
+        "        client = local_helper.Thing()\n"
+        "    client = anthropic.AsyncAnthropic()\n"
+        "    return client\n"
+    )
+    aliases = build_local_alias_table(fn, table, "pkg.mod", None, inv)
+    assert aliases == {"client": "anthropic"}
+
+
+def test_nested_closures_own_binding_is_not_attributed_to_outer():
+    # Scenario B: outer never binds `client` itself — only the nested closure
+    # `inner` does. That binding belongs to inner's own scope and must not
+    # leak into outer's alias table.
+    inv = _inventory_with(top_level=set())
+    table = {"anthropic": "anthropic"}
+    fn = _parse_fn(
+        "def outer():\n"
+        "    def inner():\n"
+        "        client = anthropic.AsyncAnthropic()\n"
+        "        return client\n"
+        "    return client.something()\n"
+    )
+    aliases = build_local_alias_table(fn, table, "pkg.mod", None, inv)
+    assert aliases == {}

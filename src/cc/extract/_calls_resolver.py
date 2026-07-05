@@ -277,6 +277,25 @@ def classify_call(
     return Resolution(kind="dynamic")
 
 
+def _own_scope_assign_nodes(fn_node: ast.AST):
+    """Yield ast.Assign nodes reachable within fn_node's own function scope —
+    including inside nested if/for/while/with/try blocks, but NOT inside any
+    function or class definition nested within fn_node (those have their own,
+    separate scope and binding of the same name means something different).
+    """
+
+    def _walk(node):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.Assign):
+                yield child
+            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            else:
+                yield from _walk(child)
+
+    yield from _walk(fn_node)
+
+
 def build_local_alias_table(
     fn_node: ast.AST,
     import_table: dict[str, str],
@@ -294,9 +313,7 @@ def build_local_alias_table(
     than guessing which one wins — no last-wins.
     """
     seen: dict[str, set[str]] = {}
-    for node in ast.walk(fn_node):
-        if not isinstance(node, ast.Assign):
-            continue
+    for node in _own_scope_assign_nodes(fn_node):
         if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
             continue
         name = node.targets[0].id
