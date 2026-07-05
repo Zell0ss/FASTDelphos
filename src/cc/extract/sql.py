@@ -1,5 +1,6 @@
 import ast
 import pathlib
+import re
 from collections import defaultdict
 
 import sqlglot
@@ -15,6 +16,36 @@ _DB_METHODS = {"execute", "executemany", "fetchone", "fetchall", "fetchmany"}
 def _str_const(node: ast.expr | None) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
+    return None
+
+
+_SQL_VERB_PATTERNS = [
+    (re.compile(r"\bUPDATE\s+([a-zA-Z_]\w*)", re.IGNORECASE), "writes"),
+    (re.compile(r"\bINSERT\s+INTO\s+([a-zA-Z_]\w*)", re.IGNORECASE), "writes"),
+    (re.compile(r"\bDELETE\s+FROM\s+([a-zA-Z_]\w*)", re.IGNORECASE), "writes"),
+    (re.compile(r"\bFROM\s+([a-zA-Z_]\w*)", re.IGNORECASE), "reads"),
+]
+
+
+def _dynamic_sql_verb_table(node: ast.expr | None) -> tuple[str, str] | None:
+    """Best-effort verb+table extraction from an f-string's STATIC fragments only.
+
+    Only trusts a match found entirely within a single ast.Constant fragment —
+    never a concatenation across a FormattedValue gap, which could splice an
+    unrelated identifier next to a keyword and fabricate a false table name
+    (e.g. f"INSERT INTO {prefix}channels ..." must NOT match "channels" — the
+    real table name is dynamic and unknowable, so this must fall through to
+    "no match" rather than guess).
+    """
+    if not isinstance(node, ast.JoinedStr):
+        return None
+    for value in node.values:
+        if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+            continue
+        for pattern, op in _SQL_VERB_PATTERNS:
+            m = pattern.search(value.value)
+            if m:
+                return op, m.group(1)
     return None
 
 
@@ -96,13 +127,16 @@ def _find_enclosing_function(
     return module_qname  # fallback: module level
 
 
-def extract_sql(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
+def extract_sql(
+    repo_path: str | pathlib.Path,
+) -> tuple[list[Node], list[Edge], list[tuple[str, int, str]]]:
     repo_path = pathlib.Path(repo_path)
     table_columns: dict[str, set[str]] = defaultdict(set)
     table_files: dict[str, tuple[str, int]] = {}  # table -> (file, line)
     raw_edges: list[
         tuple[str, str, str, str, str, int]
     ] = []  # (fn_qname, table, op, via, file, lineno)
+    dynamic_gaps: list[tuple[str, int, str]] = []
 
     for file in collect_py_files(repo_path):
         source = file.read_text(encoding="utf-8")
@@ -124,6 +158,18 @@ def extract_sql(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
                 continue
             sql = _str_const(node.args[0])
             if not sql:
+                dynamic = _dynamic_sql_verb_table(node.args[0])
+                if dynamic is None:
+                    fn_qname = _find_enclosing_function(node, tree, module_qname)
+                    dynamic_gaps.append((str(file), node.lineno, fn_qname))
+                    continue
+                op, tbl = dynamic
+                fn_qname = _find_enclosing_function(node, tree, module_qname)
+                via = f"{file}:{node.lineno}"
+                table_columns[tbl].update(())
+                if tbl not in table_files:
+                    table_files[tbl] = (str(file), node.lineno)
+                raw_edges.append((fn_qname, tbl, op, via, str(file), node.lineno))
                 continue
 
             try:
@@ -201,4 +247,4 @@ def extract_sql(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
             )
         )
 
-    return list(table_nodes.values()) + list(fn_nodes.values()), edges
+    return list(table_nodes.values()) + list(fn_nodes.values()), edges, dynamic_gaps

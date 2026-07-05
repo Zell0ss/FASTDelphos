@@ -19,7 +19,7 @@ def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
     handler_nodes = [n for n in ep_nodes if n.type == "function"]
 
     model_nodes, model_edges = extract_models(repo_path, handler_nodes)
-    sql_nodes, sql_edges = extract_sql(repo_path)
+    sql_nodes, sql_edges, sql_dynamic_gaps = extract_sql(repo_path)
     call_nodes, call_edges, call_excluded, call_coverage = extract_calls(repo_path)
 
     # Order matters: build_graph keeps the FIRST node registered per id. Handler
@@ -41,6 +41,20 @@ def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
                 node_id=None,
                 missing=f"Call graph unavailable for `{rel}` — SyntaxError: {error}",
                 suggested="Fix the syntax error so `ast.parse` can process the file.",
+                severity={"comprehension": "warning", "compliance": "error"},
+            )
+        )
+
+    for filepath, lineno, fn_qname in sql_dynamic_gaps:
+        graph.gaps.append(
+            Gap(
+                kind="unresolved_dynamic",
+                where=f"{filepath}:{lineno}",
+                node_id=f"function:{fn_qname}",
+                missing=f"SQL built dynamically (f-string) in `{fn_qname}` — "
+                "table/operation could not be statically determined",
+                suggested="Consider keeping the table name as literal text even if "
+                "the rest of the query is dynamic, so lineage stays traceable.",
                 severity={"comprehension": "warning", "compliance": "error"},
             )
         )

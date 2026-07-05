@@ -55,3 +55,21 @@ def test_pipeline_call_edges_have_nodes_on_both_ends():
         for e in calls_edges:
             assert e["from_"] in node_ids
             assert e["to"] in node_ids
+
+
+def test_pipeline_emits_unresolved_dynamic_gap_for_fully_dynamic_sql():
+    with tempfile.TemporaryDirectory() as d:
+        repo = pathlib.Path(d) / "repo"
+        (repo / "backend").mkdir(parents=True)
+        (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+        (repo / "backend" / "db.py").write_text(
+            "async def run_query(cur, query_var, values):\n"
+            "    await cur.execute(query_var, values)\n",
+            encoding="utf-8",
+        )
+        out = pathlib.Path(d) / "out"
+        run(repo, out)
+        data = json.loads((out / "graph.json").read_text())
+        dyn_gaps = [g for g in data["gaps"] if g["kind"] == "unresolved_dynamic"]
+        assert len(dyn_gaps) == 1
+        assert dyn_gaps[0]["severity"] == {"comprehension": "warning", "compliance": "error"}
