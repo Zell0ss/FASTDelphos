@@ -68,3 +68,14 @@ def test_html_embeds_graph_json():
         emit(_minimal_graph(), pathlib.Path(d))
         html = (pathlib.Path(d) / "index.html").read_text()
         assert "endpoint:GET:/hello" in html
+
+
+def test_html_includes_search_ui():
+    with tempfile.TemporaryDirectory() as d:
+        emit(_minimal_graph(), pathlib.Path(d))
+        html = (pathlib.Path(d) / "index.html").read_text()
+        assert 'id="search-input"' in html
+        assert 'id="search-dropdown"' in html
+        assert "function buildSearchIndex" in html
+        assert "function searchGraph" in html
+        assert "function goToSearchResult" in html

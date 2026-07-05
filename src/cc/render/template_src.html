@@ -79,11 +79,41 @@
       font-size: 10px; color: #445; pointer-events: none; display: none;
       background: #1a1a2ecc; padding: 2px 8px; border-radius: 3px;
     }
+
+    #search-wrap { position: relative; margin-bottom: 10px; }
+    #search-input {
+      width: 100%; padding: 5px 8px; background: #12122a; border: 1px solid #333;
+      color: #e0e0e0; font-family: monospace; font-size: 12px; border-radius: 3px;
+      box-sizing: border-box;
+    }
+    #search-input:focus { outline: none; border-color: #7755aa; }
+    #search-dropdown {
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
+      background: #1a1a2e; border: 1px solid #333; border-top: none;
+      max-height: 260px; overflow-y: auto; display: none;
+    }
+    .search-row {
+      display: flex; align-items: center; gap: 6px; padding: 4px 8px;
+      font-size: 11px; cursor: pointer; border-bottom: 1px solid #252545;
+    }
+    .search-row:hover { background: #252545; }
+    .search-row.no-results { cursor: default; color: #556; font-style: italic; }
+    .search-row.no-results:hover { background: transparent; }
+    .search-kind {
+      font-size: 9px; padding: 1px 4px; border-radius: 3px; flex-shrink: 0;
+      background: #333; color: #99a;
+    }
+    .search-kind.field, .search-kind.column { background: #2a3a2a; color: #7c7; }
   </style>
 </head>
 <body>
   <div id="sidebar">
     <div style="font-size:13px;font-weight:bold;color:#aad;margin-bottom:4px">Comprehension Compiler</div>
+
+    <div id="search-wrap">
+      <input type="text" id="search-input" placeholder="Buscar nodo, tabla, columna, campo…" autocomplete="off">
+      <div id="search-dropdown"></div>
+    </div>
 
     <div class="section-title">Endpoints</div>
     <div id="ep-list"></div>
@@ -141,6 +171,41 @@
       (edgesTo[e.to]      = edgesTo[e.to]      || []).push(e);
     }
 
+    // ── Search index ─────────────────────────────────────────────────────────
+    function buildSearchIndex() {
+      const index = [];
+      for (const n of GRAPH.nodes) {
+        const label = short(n.id);
+        index.push({ matchText: label, kind: 'node', nodeId: n.id, label });
+
+        if (n.type === 'model' && Array.isArray(n.props.fields)) {
+          for (const f of n.props.fields) {
+            index.push({
+              matchText: f.name, kind: 'field', nodeId: n.id,
+              label: `campo ${f.name} en ${label}`,
+            });
+          }
+        }
+        if (n.type === 'table' && Array.isArray(n.props.columns)) {
+          for (const col of n.props.columns) {
+            index.push({
+              matchText: col, kind: 'column', nodeId: n.id,
+              label: `columna ${col} en ${label}`,
+            });
+          }
+        }
+      }
+      return index;
+    }
+
+    const SEARCH_INDEX = buildSearchIndex();
+
+    function searchGraph(query) {
+      const q = query.trim().toLowerCase();
+      if (q.length < 2) return [];
+      return SEARCH_INDEX.filter(e => e.matchText.toLowerCase().includes(q));
+    }
+
     // ── State ─────────────────────────────────────────────────────────────────
     let currentMode  = null;
     let currentRoot  = null;
@@ -164,6 +229,7 @@
         { selector: "node[type='model']",    style: { 'background-color': '#5cb85c' } },
         { selector: 'node.inferred',  style: { 'border-width': 2, 'border-color': '#ff9900' } },
         { selector: 'node.root-node', style: { 'border-width': 3, 'border-color': '#7755aa', width: 40, height: 40 } },
+        { selector: 'node.search-hit', style: { 'border-width': 4, 'border-color': '#ffdd44' } },
         { selector: 'edge', style: {
             label: 'data(label)', 'font-size': 8, 'curve-style': 'bezier',
             'target-arrow-shape': 'triangle', width: 1.5,
@@ -242,6 +308,46 @@
       cy.fit(cy.elements(), 40);
       hidePlaceholder();
       document.getElementById('expand-hint').style.display = '';
+    }
+
+    // ── Search navigation ─────────────────────────────────────────────────────
+    function flashNode(ele) {
+      ele.addClass('search-hit');
+      setTimeout(() => ele.removeClass('search-hit'), 600);
+    }
+
+    function goToSearchResult(entry) {
+      const nodeId   = entry.nodeId;
+      const existing = cy.getElementById(nodeId);
+
+      if (existing.length) {
+        cy.center(existing);
+        flashNode(existing);
+        showPanel(existing.data());
+        return;
+      }
+
+      const oneHop = new Set([nodeId]);
+      for (const e of (edgesFrom[nodeId] || [])) oneHop.add(e.to);
+      for (const e of (edgesTo[nodeId]   || [])) oneHop.add(e.from_);
+
+      currentMode = 'subgraph';
+      currentRoot = nodeId;
+      if (activeEpBtn) { activeEpBtn.classList.remove('active'); activeEpBtn = null; }
+      document.getElementById('btn-subgraph').classList.add('active');
+      document.getElementById('btn-map').classList.remove('active');
+
+      cy.elements().remove();
+      cy.add(makeElems(oneHop, nodeId));
+      restoreEdgeLabels();
+      applyLayout(false);
+      cy.fit(cy.elements(), 40);
+      hidePlaceholder();
+      document.getElementById('expand-hint').style.display = '';
+
+      const added = cy.getElementById(nodeId);
+      flashNode(added);
+      showPanel(added.data());
     }
 
     // ── Mode switch ───────────────────────────────────────────────────────────
@@ -379,6 +485,55 @@
       btn.onclick = () => loadEndpoint(n.id, btn);
       epList.appendChild(btn);
     }
+
+    // ── Search UI wiring ──────────────────────────────────────────────────────
+    function renderSearchDropdown(matches, query) {
+      const dd = document.getElementById('search-dropdown');
+      if (!query || query.trim().length < 2) { dd.style.display = 'none'; dd.innerHTML = ''; return; }
+
+      if (!matches.length) {
+        dd.innerHTML = '<div class="search-row no-results">sin resultados</div>';
+        dd.style.display = '';
+        return;
+      }
+
+      const kindLabel = { node: 'nodo', field: 'campo', column: 'columna' };
+      dd.innerHTML = matches.map((m, i) =>
+        `<div class="search-row" data-idx="${i}">` +
+        `<span class="search-kind ${m.kind}">${kindLabel[m.kind]}</span>` +
+        `<span>${m.label}</span></div>`
+      ).join('');
+      dd.style.display = '';
+
+      dd.querySelectorAll('.search-row[data-idx]').forEach(row => {
+        row.onclick = () => {
+          goToSearchResult(matches[Number(row.dataset.idx)]);
+          document.getElementById('search-input').value = '';
+          closeSearchDropdown();
+        };
+      });
+    }
+
+    function closeSearchDropdown() {
+      const dd = document.getElementById('search-dropdown');
+      dd.style.display = 'none';
+      dd.innerHTML = '';
+    }
+
+    document.getElementById('search-input').addEventListener('input', evt => {
+      renderSearchDropdown(searchGraph(evt.target.value), evt.target.value);
+    });
+
+    document.getElementById('search-input').addEventListener('keydown', evt => {
+      if (evt.key === 'Escape') {
+        evt.target.value = '';
+        closeSearchDropdown();
+      }
+    });
+
+    document.addEventListener('click', evt => {
+      if (!document.getElementById('search-wrap').contains(evt.target)) closeSearchDropdown();
+    });
 
     // ── Gaps ──────────────────────────────────────────────────────────────────
     if (GRAPH.gaps && GRAPH.gaps.length) {
