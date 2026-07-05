@@ -336,16 +336,77 @@ def build_local_alias_table(
     }
 
 
+def _collect_target_names(target: ast.expr, names: set[str]) -> None:
+    """Recursively add every bound name in a (possibly nested) assignment
+    target, handling plain names as well as tuple/list/starred unpacking
+    (`a, b = ...`, `*rest, x = ...`, `(a, (b, c)) = ...`).
+    """
+    if isinstance(target, ast.Name):
+        names.add(target.id)
+    elif isinstance(target, ast.Starred):
+        _collect_target_names(target.value, names)
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for elt in target.elts:
+            _collect_target_names(elt, names)
+    # Any other target form (ast.Attribute, ast.Subscript, ...) rebinds an
+    # attribute/item of an existing object, not a new local name — skip it.
+
+
 def local_assignment_targets(fn_node: ast.AST) -> set[str]:
-    """Names assigned via a simple `name = ...` anywhere in fn_node's own scope,
-    regardless of whether the assignment qualifies as an external alias.
+    """Names locally bound anywhere within fn_node's own function scope,
+    regardless of whether the binding qualifies as an external alias.
+
+    Recognizes every real Python local-binding form:
+    - function parameters (positional, keyword-only, `*args`, `**kwargs`) —
+      only when fn_node is itself a FunctionDef/AsyncFunctionDef
+    - `ast.Assign` targets, including tuple/list/starred unpacking
+    - `ast.AnnAssign` and `ast.AugAssign` targets
+    - `for` / `async for` loop targets (unpacking-aware)
+    - `with` / `async with ... as` targets (unpacking-aware)
+    - `except ... as name` bindings
+    - walrus (`ast.NamedExpr`) targets
 
     Used so a function's own (possibly non-qualifying) rebinding of a name
     shadows any module-level alias for that same name — matching real Python
-    scoping, where a local assignment always shadows an outer/global binding.
+    scoping, where a local binding always shadows an outer/global one. Does
+    NOT descend into nested function/class definitions — those are a
+    separate scope with their own, independent bindings.
     """
     names: set[str] = set()
-    for node in _own_scope_assign_nodes(fn_node):
-        if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-            names.add(node.targets[0].id)
+
+    if isinstance(fn_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        fn_args = fn_node.args
+        for arg in (*fn_args.posonlyargs, *fn_args.args, *fn_args.kwonlyargs):
+            names.add(arg.arg)
+        if fn_args.vararg is not None:
+            names.add(fn_args.vararg.arg)
+        if fn_args.kwarg is not None:
+            names.add(fn_args.kwarg.arg)
+
+    def _walk(node) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            if isinstance(child, ast.Assign):
+                for target in child.targets:
+                    _collect_target_names(target, names)
+            elif isinstance(child, (ast.AnnAssign, ast.AugAssign)):
+                _collect_target_names(child.target, names)
+            elif isinstance(child, (ast.For, ast.AsyncFor)):
+                _collect_target_names(child.target, names)
+            elif isinstance(child, (ast.With, ast.AsyncWith)):
+                for item in child.items:
+                    if item.optional_vars is not None:
+                        _collect_target_names(item.optional_vars, names)
+            elif isinstance(child, ast.ExceptHandler):
+                if child.name is not None:
+                    names.add(child.name)
+            elif isinstance(child, ast.NamedExpr):
+                _collect_target_names(child.target, names)
+            # Recurse into every non-def/class child, including expression
+            # subtrees, so walrus targets nested inside expressions (e.g.
+            # `if (x := f()):`) are still found.
+            _walk(child)
+
+    _walk(fn_node)
     return names

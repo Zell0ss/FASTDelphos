@@ -210,3 +210,21 @@ def test_case_2b_local_reassignment_shadows_module_alias(tmp_path):
     # classified external.
     assert per_file["resolved_external"] == 1
     assert per_file["unresolved_dynamic"] == 1
+
+
+def test_case_2b_parameter_shadows_module_alias(tmp_path):
+    # Reviewer repro: a parameter named the same as a module-level alias is
+    # an ordinary, unrelated local binding — it must shadow the module alias
+    # just like an explicit reassignment does, so the call resolves dynamic
+    # rather than wrongly inheriting the module's external package.
+    (tmp_path / "mod.py").write_text(
+        "import anthropic\n\n"
+        "client = anthropic.AsyncAnthropic()\n\n\n"
+        "def helper(client):\n"
+        "    return client.something()\n",
+        encoding="utf-8",
+    )
+    _, edges, _, coverage = extract_calls(tmp_path)
+    per_file = coverage["per_file"]["mod.py"]
+    assert per_file["resolved_external"] == 0
+    assert per_file["unresolved_dynamic"] == 1

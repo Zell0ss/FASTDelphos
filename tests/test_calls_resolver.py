@@ -513,3 +513,119 @@ def test_local_assignment_targets_empty_when_nothing_assigned():
         "    return 1\n"
     )
     assert local_assignment_targets(fn) == set()
+
+
+def test_local_assignment_targets_includes_parameters():
+    # The exact reviewer repro: a parameter named `client` must be recognized
+    # as a local binding so it shadows any module-level `client` alias —
+    # otherwise `client.something()` inside this function would incorrectly
+    # inherit an unrelated module-level alias.
+    fn = _parse_fn(
+        "def helper(client):\n"
+        "    return client.something()\n"
+    )
+    assert local_assignment_targets(fn) == {"client"}
+
+
+def test_local_assignment_targets_includes_all_parameter_kinds():
+    fn = _parse_fn(
+        "def f(a, /, b, *args, c, **kwargs):\n"
+        "    return 1\n"
+    )
+    assert local_assignment_targets(fn) == {"a", "b", "args", "c", "kwargs"}
+
+
+def test_local_assignment_targets_includes_tuple_unpacking():
+    fn = _parse_fn(
+        "def f():\n"
+        "    a, b = get_pair()\n"
+        "    *rest, last = get_list()\n"
+    )
+    assert local_assignment_targets(fn) == {"a", "b", "rest", "last"}
+
+
+def test_local_assignment_targets_includes_annassign_and_augassign():
+    fn = _parse_fn(
+        "def f():\n"
+        "    x: int = 5\n"
+        "    y += 1\n"
+    )
+    assert local_assignment_targets(fn) == {"x", "y"}
+
+
+def test_local_assignment_targets_includes_for_loop_target():
+    fn = _parse_fn(
+        "def f():\n"
+        "    for client in get_clients():\n"
+        "        print(client)\n"
+    )
+    assert local_assignment_targets(fn) == {"client"}
+
+
+def test_local_assignment_targets_includes_async_for_loop_target():
+    fn = _parse_fn(
+        "async def f():\n"
+        "    async for client in get_clients():\n"
+        "        print(client)\n"
+    )
+    assert local_assignment_targets(fn) == {"client"}
+
+
+def test_local_assignment_targets_includes_with_as_target():
+    fn = _parse_fn(
+        "def f():\n"
+        "    with open('x') as client:\n"
+        "        print(client)\n"
+    )
+    assert local_assignment_targets(fn) == {"client"}
+
+
+def test_local_assignment_targets_includes_async_with_as_target():
+    fn = _parse_fn(
+        "async def f():\n"
+        "    async with get_client() as client:\n"
+        "        print(client)\n"
+    )
+    assert local_assignment_targets(fn) == {"client"}
+
+
+def test_local_assignment_targets_includes_except_as_name():
+    fn = _parse_fn(
+        "def f():\n"
+        "    try:\n"
+        "        pass\n"
+        "    except Exception as client:\n"
+        "        print(client)\n"
+    )
+    assert local_assignment_targets(fn) == {"client"}
+
+
+def test_local_assignment_targets_includes_walrus_target():
+    fn = _parse_fn(
+        "def f():\n"
+        "    if (client := get_client()):\n"
+        "        print(client)\n"
+    )
+    assert local_assignment_targets(fn) == {"client"}
+
+
+def test_local_assignment_targets_ignores_nested_def_parameters():
+    # A nested function's own parameter is a binding in ITS scope, not the
+    # outer function's — it must not leak into the outer set.
+    fn = _parse_fn(
+        "def outer():\n"
+        "    def inner(client):\n"
+        "        return client\n"
+        "    return 1\n"
+    )
+    assert local_assignment_targets(fn) == set()
+
+
+def test_local_assignment_targets_ignores_nested_class_scope():
+    fn = _parse_fn(
+        "def outer():\n"
+        "    class Inner:\n"
+        "        client = None\n"
+        "    return 1\n"
+    )
+    assert local_assignment_targets(fn) == set()
