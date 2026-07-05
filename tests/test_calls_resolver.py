@@ -361,3 +361,90 @@ def test_flat_repo_with_no_package_markers_still_indexes_root_modules(tmp_path):
     inv = build_symbol_inventory(repo)
     assert "script" in inv.top_level_packages
     assert "script.run" in inv.functions
+
+
+from cc.extract._calls_resolver import build_local_alias_table
+
+
+def _parse_fn(source: str) -> ast.AST:
+    tree = ast.parse(source)
+    return tree.body[0]
+
+
+def test_alias_to_external_attribute_call_is_tracked():
+    inv = _inventory_with(top_level=set())  # "anthropic" is not a repo package
+    table = {"anthropic": "anthropic"}
+    fn = _parse_fn(
+        "def f():\n"
+        "    client = anthropic.AsyncAnthropic()\n"
+        "    return client\n"
+    )
+    aliases = build_local_alias_table(fn, table, "pkg.mod", None, inv)
+    assert aliases == {"client": "anthropic"}
+
+
+def test_alias_to_internal_base_is_not_tracked():
+    inv = _inventory_with(top_level={"services"})
+    table = {"helper_mod": "services.helper_mod"}
+    fn = _parse_fn(
+        "def f():\n"
+        "    x = helper_mod.Thing()\n"
+        "    return x\n"
+    )
+    aliases = build_local_alias_table(fn, table, "pkg.mod", None, inv)
+    assert aliases == {}
+
+
+def test_alias_dropped_on_disagreeing_reassignment():
+    inv = _inventory_with(top_level=set())
+    table = {"anthropic": "anthropic", "boto3": "boto3"}
+    fn = _parse_fn(
+        "def f(flag):\n"
+        "    if flag:\n"
+        "        client = anthropic.AsyncAnthropic()\n"
+        "    else:\n"
+        "        client = boto3.client('s3')\n"
+        "    return client\n"
+    )
+    aliases = build_local_alias_table(fn, table, "pkg.mod", None, inv)
+    assert aliases == {}
+
+
+def test_alias_kept_when_reassigned_with_same_external_package():
+    inv = _inventory_with(top_level=set())
+    table = {"anthropic": "anthropic"}
+    fn = _parse_fn(
+        "def f(flag):\n"
+        "    if flag:\n"
+        "        client = anthropic.AsyncAnthropic(key='a')\n"
+        "    else:\n"
+        "        client = anthropic.AsyncAnthropic(key='b')\n"
+        "    return client\n"
+    )
+    aliases = build_local_alias_table(fn, table, "pkg.mod", None, inv)
+    assert aliases == {"client": "anthropic"}
+
+
+def test_alias_dropped_when_mixed_with_non_qualifying_assignment():
+    inv = _inventory_with(top_level=set())
+    table = {"anthropic": "anthropic"}
+    fn = _parse_fn(
+        "def f(flag):\n"
+        "    client = anthropic.AsyncAnthropic()\n"
+        "    if flag:\n"
+        "        client = None\n"
+        "    return client\n"
+    )
+    aliases = build_local_alias_table(fn, table, "pkg.mod", None, inv)
+    assert aliases == {}
+
+
+def test_non_call_or_non_attribute_rhs_is_not_tracked():
+    inv = _inventory_with(top_level=set())
+    fn = _parse_fn(
+        "def f():\n"
+        "    x = 5\n"
+        "    y = some_function()\n"
+    )
+    aliases = build_local_alias_table(fn, {}, "pkg.mod", None, inv)
+    assert aliases == {}

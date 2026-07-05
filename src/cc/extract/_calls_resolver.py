@@ -275,3 +275,45 @@ def classify_call(
         return Resolution(kind="dynamic")
 
     return Resolution(kind="dynamic")
+
+
+def build_local_alias_table(
+    fn_node: ast.AST,
+    import_table: dict[str, str],
+    module_qname: str,
+    class_qname: str | None,
+    inventory: SymbolInventory,
+) -> dict[str, str]:
+    """Track simple local aliases to external imports within one function scope.
+
+    Only `name = base.attr(...)` assignments where `base` resolves — via the
+    same classify_call used for every other call site — to an EXTERNAL
+    package are trusted. If a name has more than one qualifying assignment
+    in this scope and they disagree (different external package, or mixed
+    with a non-qualifying assignment), the name is dropped entirely rather
+    than guessing which one wins — no last-wins.
+    """
+    seen: dict[str, set[str]] = {}
+    for node in ast.walk(fn_node):
+        if not isinstance(node, ast.Assign):
+            continue
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        name = node.targets[0].id
+
+        value = "\x00other"  # sentinel distinct from any real package name
+        if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Attribute):
+            resolution = classify_call(
+                node.value, import_table=import_table, module_qname=module_qname,
+                class_qname=class_qname, inventory=inventory,
+            )
+            if resolution.kind == "external":
+                value = resolution.package
+
+        seen.setdefault(name, set()).add(value)
+
+    return {
+        name: next(iter(values))
+        for name, values in seen.items()
+        if len(values) == 1 and next(iter(values)) != "\x00other"
+    }
