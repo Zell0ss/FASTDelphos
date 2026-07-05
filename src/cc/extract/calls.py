@@ -32,8 +32,13 @@ def _iter_named_defs(tree, class_stack=None):
 
 
 def _zero_counts() -> dict:
-    return {"functions": 0, "call_sites": 0, "resolved_internal": 0,
-             "resolved_external": 0, "unresolved_dynamic": 0}
+    return {
+        "functions": 0,
+        "call_sites": 0,
+        "resolved_internal": 0,
+        "resolved_external": 0,
+        "unresolved_dynamic": 0,
+    }
 
 
 def extract_calls(
@@ -79,22 +84,33 @@ def extract_calls(
 
             caller_id = f"function:{fn_qualname}"
             end_lineno = fn_node.end_lineno or fn_node.lineno
-            nodes.setdefault(caller_id, Node(
-                id=caller_id, type="function", file=str(file),
-                line=fn_node.lineno,
-                hash=node_hash(file, fn_node.lineno, end_lineno),
-                inferred=False,
-                props={"qualname": fn_qualname, "kind": "method" if class_stack else "function",
-                       "is_handler": False},
-            ))
+            nodes.setdefault(
+                caller_id,
+                Node(
+                    id=caller_id,
+                    type="function",
+                    file=str(file),
+                    line=fn_node.lineno,
+                    hash=node_hash(file, fn_node.lineno, end_lineno),
+                    inferred=False,
+                    props={
+                        "qualname": fn_qualname,
+                        "kind": "method" if class_stack else "function",
+                        "is_handler": False,
+                    },
+                ),
+            )
 
             for call in ast.walk(fn_node):
                 if not isinstance(call, ast.Call):
                     continue
                 counts["call_sites"] += 1
                 resolution = classify_call(
-                    call, import_table=import_table, module_qname=module_qname,
-                    class_qname=class_qname, inventory=inventory,
+                    call,
+                    import_table=import_table,
+                    module_qname=module_qname,
+                    class_qname=class_qname,
+                    inventory=inventory,
                 )
                 if resolution.kind == "internal":
                     counts["resolved_internal"] += 1
@@ -102,20 +118,44 @@ def extract_calls(
                     if callee_qname == fn_qualname:
                         continue  # no self-loops
                     callee_info = inventory.functions[callee_qname]
+                    if callee_info.file == "unknown":
+                        # griffe couldn't locate this symbol's source (namespace
+                        # package, compiled stub, ...) — we can't hydrate a real
+                        # Node for it. Skip rather than crash node_hash; the call
+                        # was still structurally resolved, so it stays counted
+                        # above, it just can't be rendered as an edge.
+                        continue
                     callee_id = f"function:{callee_qname}"
-                    nodes.setdefault(callee_id, Node(
-                        id=callee_id, type="function", file=callee_info.file,
-                        line=callee_info.lineno,
-                        hash=node_hash(callee_info.file, callee_info.lineno, callee_info.endlineno),
-                        inferred=False,
-                        props={"qualname": callee_qname, "kind": callee_info.kind,
-                               "is_handler": False},
-                    ))
+                    nodes.setdefault(
+                        callee_id,
+                        Node(
+                            id=callee_id,
+                            type="function",
+                            file=callee_info.file,
+                            line=callee_info.lineno,
+                            hash=node_hash(
+                                callee_info.file, callee_info.lineno, callee_info.endlineno
+                            ),
+                            inferred=False,
+                            props={
+                                "qualname": callee_qname,
+                                "kind": callee_info.kind,
+                                "is_handler": False,
+                            },
+                        ),
+                    )
                     key = (caller_id, callee_id)
                     if key not in seen_edges:
                         seen_edges.add(key)
-                        edges.append(Edge(from_=caller_id, to=callee_id,
-                                           type="calls", inferred=False, props={}))
+                        edges.append(
+                            Edge(
+                                from_=caller_id,
+                                to=callee_id,
+                                type="calls",
+                                inferred=False,
+                                props={},
+                            )
+                        )
                 elif resolution.kind == "external":
                     counts["resolved_external"] += 1
                 else:

@@ -38,8 +38,10 @@ def test_function_nodes_are_hydrated_not_placeholders():
 def test_case1_direct_name_same_module():
     _, edges, _, _ = extract_calls(CALLS_REPO)
     pairs = {(e.from_, e.to) for e in edges}
-    assert ("function:services.synthesis.build_context",
-            "function:services.synthesis._compress") in pairs
+    assert (
+        "function:services.synthesis.build_context",
+        "function:services.synthesis._compress",
+    ) in pairs
 
 
 def test_case1_imported_name_called_directly():
@@ -51,14 +53,16 @@ def test_case1_imported_name_called_directly():
 def test_case2_attribute_on_aliased_dotted_import():
     _, edges, _, _ = extract_calls(CALLS_REPO)
     pairs = {(e.from_, e.to) for e in edges}
-    assert ("function:services.synthesis.build_context",
-            "function:services.helpers.extra") in pairs
+    assert ("function:services.synthesis.build_context", "function:services.helpers.extra") in pairs
 
 
 def test_case2_from_import_as_module_plus_attribute():
     _, edges, _, _ = extract_calls(CALLS_REPO)
     pairs = {(e.from_, e.to) for e in edges}
-    assert ("function:main.handler_via_module", "function:services.synthesis.build_context") in pairs
+    assert (
+        "function:main.handler_via_module",
+        "function:services.synthesis.build_context",
+    ) in pairs
 
 
 def test_case2_plain_dotted_import_three_levels():
@@ -70,15 +74,19 @@ def test_case2_plain_dotted_import_three_levels():
 def test_case3_inherited_method_across_modules():
     _, edges, _, _ = extract_calls(CALLS_REPO)
     pairs = {(e.from_, e.to) for e in edges}
-    assert ("function:services.child.LoudGreeter.shout",
-            "function:services.base.Greeter.greet") in pairs
+    assert (
+        "function:services.child.LoudGreeter.shout",
+        "function:services.base.Greeter.greet",
+    ) in pairs
 
 
 def test_async_await_unwrapped_without_special_casing():
     _, edges, _, _ = extract_calls(CALLS_REPO)
     pairs = {(e.from_, e.to) for e in edges}
-    assert ("function:services.synthesis.build_context_async",
-            "function:services.synthesis.build_context") in pairs
+    assert (
+        "function:services.synthesis.build_context_async",
+        "function:services.synthesis.build_context",
+    ) in pairs
 
 
 def test_dynamic_dispatch_produces_no_edge():
@@ -115,3 +123,33 @@ def test_syntax_error_file_is_excluded_not_silently_dropped(tmp_path):
     nodes, edges, excluded, coverage = extract_calls(tmp_path)
     assert len(excluded) == 1
     assert str(tmp_path / "broken.py") == excluded[0][0]
+
+
+def test_root_level_module_call_is_internal_not_external(tmp_path):
+    (tmp_path / "loose.py").write_text("def stray(x):\n    return x\n", encoding="utf-8")
+    (tmp_path / "user.py").write_text(
+        "from loose import stray\n\n\ndef use_it(x):\n    return stray(x)\n",
+        encoding="utf-8",
+    )
+    _, edges, _, coverage = extract_calls(tmp_path)
+    pairs = {(e.from_, e.to) for e in edges}
+    assert ("function:user.use_it", "function:loose.stray") in pairs
+    assert coverage["total"]["resolved_external"] == 0
+
+
+def test_unknown_filepath_callee_does_not_crash(tmp_path, monkeypatch):
+    (tmp_path / "user.py").write_text("def use_it(x):\n    return helper(x)\n", encoding="utf-8")
+    import cc.extract.calls as calls_mod
+    from cc.extract._calls_resolver import FuncInfo, SymbolInventory
+
+    fake_inventory = SymbolInventory(
+        functions={"user.helper": FuncInfo("user.helper", "unknown", 1, 1, "function")},
+        top_level_packages={"user"},
+    )
+    monkeypatch.setattr(calls_mod, "build_symbol_inventory", lambda repo_path: fake_inventory)
+    # `user.py` at the repo root has module_qname "user", so case 1's module-local
+    # check (`candidate = f"{module_qname}.{name}"`) resolves `helper(x)` to
+    # "user.helper" directly — matching the fake inventory's (unhydratable) entry.
+    nodes, edges, excluded, coverage = extract_calls(tmp_path)
+    assert edges == []  # skipped, not crashed
+    assert coverage["total"]["call_sites"] >= 1

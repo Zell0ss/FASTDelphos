@@ -12,21 +12,26 @@ def _write(root: pathlib.Path, rel: str, content: str) -> None:
 def _make_repo(tmp_path: pathlib.Path) -> pathlib.Path:
     repo = tmp_path / "repo"
     _write(repo, "services/__init__.py", "")
-    _write(repo, "services/base.py", (
-        "class Greeter:\n"
-        "    def greet(self, name: str) -> str:\n"
-        "        return f'hello {name}'\n"
-    ))
-    _write(repo, "services/child.py", (
-        "from services.base import Greeter\n\n\n"
-        "class LoudGreeter(Greeter):\n"
-        "    def shout(self, name: str) -> str:\n"
-        "        return self.greet(name).upper()\n"
-    ))
-    _write(repo, "services/helpers.py", (
-        "def extra(text: str) -> str:\n"
-        "    return text + '!'\n"
-    ))
+    _write(
+        repo,
+        "services/base.py",
+        (
+            "class Greeter:\n"
+            "    def greet(self, name: str) -> str:\n"
+            "        return f'hello {name}'\n"
+        ),
+    )
+    _write(
+        repo,
+        "services/child.py",
+        (
+            "from services.base import Greeter\n\n\n"
+            "class LoudGreeter(Greeter):\n"
+            "    def shout(self, name: str) -> str:\n"
+            "        return self.greet(name).upper()\n"
+        ),
+    )
+    _write(repo, "services/helpers.py", ("def extra(text: str) -> str:\n    return text + '!'\n"))
     return repo
 
 
@@ -57,7 +62,9 @@ def test_records_class_methods(tmp_path):
     repo = _make_repo(tmp_path)
     inv = build_symbol_inventory(repo)
     assert inv.class_methods["services.base.Greeter"] == {"greet": "services.base.Greeter.greet"}
-    assert inv.class_methods["services.child.LoudGreeter"] == {"shout": "services.child.LoudGreeter.shout"}
+    assert inv.class_methods["services.child.LoudGreeter"] == {
+        "shout": "services.child.LoudGreeter.shout"
+    }
 
 
 def test_top_level_packages_recorded_even_if_load_fails(tmp_path):
@@ -72,9 +79,9 @@ def test_top_level_packages_recorded_even_if_load_fails(tmp_path):
 import ast
 
 from cc.extract._calls_resolver import (
+    FuncInfo,
     Resolution,
     SymbolInventory,
-    FuncInfo,
     build_import_table,
     classify_call,
     flatten_attribute,
@@ -109,18 +116,24 @@ def test_from_import_with_alias():
 
 def test_relative_import_resolved_against_module_package():
     # module "pkg.mod" (a regular module, not __init__.py) -> its own package is "pkg"
-    table = _parse_import_table("from .sibling import helper\n", module_qname="pkg.mod", is_package_init=False)
+    table = _parse_import_table(
+        "from .sibling import helper\n", module_qname="pkg.mod", is_package_init=False
+    )
     assert table["helper"] == "pkg.sibling.helper"
 
 
 def test_relative_import_from_package_init():
     # module "pkg" IS a package (__init__.py) -> "." means "pkg" itself
-    table = _parse_import_table("from .sibling import helper\n", module_qname="pkg", is_package_init=True)
+    table = _parse_import_table(
+        "from .sibling import helper\n", module_qname="pkg", is_package_init=True
+    )
     assert table["helper"] == "pkg.sibling.helper"
 
 
 def test_relative_import_dot_only():
-    table = _parse_import_table("from . import sibling\n", module_qname="pkg.mod", is_package_init=False)
+    table = _parse_import_table(
+        "from . import sibling\n", module_qname="pkg.mod", is_package_init=False
+    )
     assert table["sibling"] == "pkg.sibling"
 
 
@@ -186,36 +199,67 @@ def _call(source: str) -> ast.Call:
 
 
 def test_classify_case1_module_local_function():
-    inv = _inventory_with(functions={"pkg.mod.helper": FuncInfo("pkg.mod.helper", "f.py", 1, 1, "function")})
-    res = classify_call(_call("helper(1)"), import_table={}, module_qname="pkg.mod",
-                         class_qname=None, inventory=inv)
+    inv = _inventory_with(
+        functions={"pkg.mod.helper": FuncInfo("pkg.mod.helper", "f.py", 1, 1, "function")}
+    )
+    res = classify_call(
+        _call("helper(1)"), import_table={}, module_qname="pkg.mod", class_qname=None, inventory=inv
+    )
     assert res == Resolution(kind="internal", qualname="pkg.mod.helper")
 
 
 def test_classify_case1_imported_name():
-    inv = _inventory_with(functions={"services.synthesis.build_context": FuncInfo(
-        "services.synthesis.build_context", "f.py", 1, 1, "function")})
+    inv = _inventory_with(
+        functions={
+            "services.synthesis.build_context": FuncInfo(
+                "services.synthesis.build_context", "f.py", 1, 1, "function"
+            )
+        }
+    )
     table = {"build_context": "services.synthesis.build_context"}
-    res = classify_call(_call("build_context(1)"), import_table=table, module_qname="main",
-                         class_qname=None, inventory=inv)
+    res = classify_call(
+        _call("build_context(1)"),
+        import_table=table,
+        module_qname="main",
+        class_qname=None,
+        inventory=inv,
+    )
     assert res == Resolution(kind="internal", qualname="services.synthesis.build_context")
 
 
 def test_classify_case2_attribute_on_aliased_dotted_import():
-    inv = _inventory_with(functions={"services.helpers.extra": FuncInfo(
-        "services.helpers.extra", "f.py", 1, 1, "function")})
+    inv = _inventory_with(
+        functions={
+            "services.helpers.extra": FuncInfo("services.helpers.extra", "f.py", 1, 1, "function")
+        }
+    )
     table = {"helpers_mod": "services.helpers"}
-    res = classify_call(_call("helpers_mod.extra(1)"), import_table=table, module_qname="services.synthesis",
-                         class_qname=None, inventory=inv)
+    res = classify_call(
+        _call("helpers_mod.extra(1)"),
+        import_table=table,
+        module_qname="services.synthesis",
+        class_qname=None,
+        inventory=inv,
+    )
     assert res == Resolution(kind="internal", qualname="services.helpers.extra")
 
 
 def test_classify_case2_plain_dotted_import_three_levels():
-    inv = _inventory_with(functions={"services.synthesis.build_context": FuncInfo(
-        "services.synthesis.build_context", "f.py", 1, 1, "function")})
+    inv = _inventory_with(
+        functions={
+            "services.synthesis.build_context": FuncInfo(
+                "services.synthesis.build_context", "f.py", 1, 1, "function"
+            )
+        }
+    )
     table = {"services": "services"}
-    res = classify_call(_call("services.synthesis.build_context(1)"), import_table=table,
-                         module_qname="other", class_qname=None, inventory=inv)
+    res = classify_call(
+        _call("services.synthesis.build_context(1)"),
+        import_table=table,
+        module_qname="other",
+        class_qname=None,
+        inventory=inv,
+    )
     assert res == Resolution(kind="internal", qualname="services.synthesis.build_context")
 
 
@@ -224,37 +268,62 @@ def test_classify_case3_self_inherited_method():
         class_bases={"services.child.LoudGreeter": ["services.base.Greeter"]},
         class_methods={"services.base.Greeter": {"greet": "services.base.Greeter.greet"}},
     )
-    res = classify_call(_call("self.greet(name)"), import_table={}, module_qname="services.child",
-                         class_qname="services.child.LoudGreeter", inventory=inv)
+    res = classify_call(
+        _call("self.greet(name)"),
+        import_table={},
+        module_qname="services.child",
+        class_qname="services.child.LoudGreeter",
+        inventory=inv,
+    )
     assert res == Resolution(kind="internal", qualname="services.base.Greeter.greet")
 
 
 def test_classify_external_import_outside_repo():
     inv = _inventory_with(top_level=set())  # "logging" is not a repo package
     table = {"logging": "logging"}
-    res = classify_call(_call("logging.info('x')"), import_table=table, module_qname="services.synthesis",
-                         class_qname=None, inventory=inv)
+    res = classify_call(
+        _call("logging.info('x')"),
+        import_table=table,
+        module_qname="services.synthesis",
+        class_qname=None,
+        inventory=inv,
+    )
     assert res == Resolution(kind="external", package="logging")
 
 
 def test_classify_dynamic_default_for_unknown_name():
     inv = _inventory_with()
-    res = classify_call(_call("mystery(1)"), import_table={}, module_qname="pkg.mod",
-                         class_qname=None, inventory=inv)
+    res = classify_call(
+        _call("mystery(1)"),
+        import_table={},
+        module_qname="pkg.mod",
+        class_qname=None,
+        inventory=inv,
+    )
     assert res == Resolution(kind="dynamic")
 
 
 def test_classify_dynamic_for_chained_attribute():
     inv = _inventory_with()
-    res = classify_call(_call("get_obj().method(1)"), import_table={}, module_qname="pkg.mod",
-                         class_qname=None, inventory=inv)
+    res = classify_call(
+        _call("get_obj().method(1)"),
+        import_table={},
+        module_qname="pkg.mod",
+        class_qname=None,
+        inventory=inv,
+    )
     assert res == Resolution(kind="dynamic")
 
 
 def test_classify_dynamic_for_subscript_dispatch():
     inv = _inventory_with()
-    res = classify_call(_call("handlers[key](1)"), import_table={}, module_qname="pkg.mod",
-                         class_qname=None, inventory=inv)
+    res = classify_call(
+        _call("handlers[key](1)"),
+        import_table={},
+        module_qname="pkg.mod",
+        class_qname=None,
+        inventory=inv,
+    )
     assert res == Resolution(kind="dynamic")
 
 
@@ -262,6 +331,33 @@ def test_classify_dynamic_for_builtin_with_no_import_evidence():
     # `getattr` is never imported — no positive evidence it's external, so it's
     # dynamic, not external. See VISITOR.md addendum point 1.
     inv = _inventory_with()
-    res = classify_call(_call("getattr(obj, name)"), import_table={}, module_qname="pkg.mod",
-                         class_qname=None, inventory=inv)
+    res = classify_call(
+        _call("getattr(obj, name)"),
+        import_table={},
+        module_qname="pkg.mod",
+        class_qname=None,
+        inventory=inv,
+    )
     assert res == Resolution(kind="dynamic")
+
+
+def test_root_level_module_recorded_as_top_level_package(tmp_path):
+    repo = _make_repo(tmp_path)
+    _write(repo, "loose.py", "def stray(x):\n    return x\n")
+    inv = build_symbol_inventory(repo)
+    assert "loose" in inv.top_level_packages
+
+
+def test_root_level_module_functions_are_indexed(tmp_path):
+    repo = _make_repo(tmp_path)
+    _write(repo, "loose.py", "def stray(x):\n    return x\n")
+    inv = build_symbol_inventory(repo)
+    assert "loose.stray" in inv.functions
+
+
+def test_flat_repo_with_no_package_markers_still_indexes_root_modules(tmp_path):
+    repo = tmp_path / "flat_repo"
+    _write(repo, "script.py", "def run(x):\n    return x\n")
+    inv = build_symbol_inventory(repo)
+    assert "script" in inv.top_level_packages
+    assert "script.run" in inv.functions

@@ -5,6 +5,7 @@ classify a call site into exactly one of three buckets: resolved_internal,
 resolved_external, or unresolved_dynamic. No file walking here — see calls.py
 for the orchestrator that drives this module across the repo.
 """
+
 import ast
 import pathlib
 import sys
@@ -92,9 +93,6 @@ def build_symbol_inventory(repo_path: str | pathlib.Path) -> SymbolInventory:
     for init in repo_path.glob("*/__init__.py"):
         if init.parent.name in _SKIP_DIRS:
             continue
-        # Recorded unconditionally — a package that exists but fails to parse
-        # is still internal, never "external", even though its own symbols
-        # won't make it into `functions`.
         inv.top_level_packages.add(init.parent.name)
         _try_load(init.parent.name, [repo_path])
         loaded_any = True
@@ -102,6 +100,18 @@ def build_symbol_inventory(repo_path: str | pathlib.Path) -> SymbolInventory:
     if not loaded_any and (repo_path / "__init__.py").exists():
         inv.top_level_packages.add(repo_path.name)
         _try_load(repo_path.name, [repo_path.parent])
+    else:
+        # Standalone modules living directly at the repo root (no package
+        # wrapping them) are invisible to the subpackage/whole-repo-package
+        # loading above. `griffe.load` can load a single module by name just
+        # like a package — treat each root-level .py file the same way, so
+        # calls into it resolve instead of falling through to "external"
+        # for lack of any evidence either way.
+        for py_file in repo_path.glob("*.py"):
+            if py_file.name == "__init__.py":
+                continue
+            inv.top_level_packages.add(py_file.stem)
+            _try_load(py_file.stem, [repo_path])
 
     return inv
 
@@ -111,6 +121,7 @@ def _module_level_import_nodes(tree: ast.Module):
     including inside module-level `if`/`try` blocks, but NOT inside function
     or class bodies (a local import only rebinds a name within that function).
     """
+
     def _walk(node):
         for child in ast.iter_child_nodes(node):
             if isinstance(child, (ast.Import, ast.ImportFrom)):
@@ -119,6 +130,7 @@ def _module_level_import_nodes(tree: ast.Module):
                 continue
             else:
                 yield from _walk(child)
+
     yield from _walk(tree)
 
 
@@ -139,7 +151,9 @@ def _relative_package(module_qname: str, is_package_init: bool, level: int) -> s
     return ".".join(base) if base else None
 
 
-def build_import_table(tree: ast.Module, module_qname: str, is_package_init: bool) -> dict[str, str]:
+def build_import_table(
+    tree: ast.Module, module_qname: str, is_package_init: bool
+) -> dict[str, str]:
     """Map each module-level imported local name to its absolute dotted qualname prefix."""
     table: dict[str, str] = {}
     for node in _module_level_import_nodes(tree):
@@ -181,7 +195,10 @@ def flatten_attribute(node: ast.expr) -> list[str] | None:
 
 
 def resolve_method_in_hierarchy(
-    inv: SymbolInventory, class_qname: str, method_name: str, _seen: set[str] | None = None,
+    inv: SymbolInventory,
+    class_qname: str,
+    method_name: str,
+    _seen: set[str] | None = None,
 ) -> str | None:
     """Look up `method_name` on `class_qname`, then walk up its base classes."""
     if _seen is None:
