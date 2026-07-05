@@ -10,7 +10,8 @@
 - ✅ **Nivel 1 implementado, mergeado a `main`, validado contra agora real.** Ver §Criterios de aceptación para el detalle de cada uno.
 - ✅ **Nivel 2 cerrado al backlog con datos** — ver §Nivel 2.
 - ✅ **Fix `extract_sql.py` / SQL dinámico vía f-string implementado** — ver §Fix f-string.
-- ⏳ **Caso 2b (alias local a import externo) decidido, pendiente de implementar** — ver §Caso 2b.
+- ✅ **Caso 2b (alias local a import externo) implementado** — scope de función y de módulo, con blindaje de shadowing (parámetros, `for`/`with`/`except`, unpacking). Verificado contra agora: `unresolved_dynamic` 243→241. Ver §Caso 2b.
+- ⏳ **Re-export a través de módulo interno** (los 8 `logger.*` reales) — spike de griffe hecho (`target_path` funciona sin cargar el paquete externo), implementación pendiente de decisión. Ver §Hallazgos pendientes.
 - ⏳ **Import local a función — pendiente de decisión de scope** (no implementado) — ver §Hallazgos pendientes.
 - ⏳ **Tarea paralela (issue upstream pyan3)** — no bloqueante, estado independiente de este documento, ver §Tarea paralela.
 
@@ -98,9 +99,9 @@ Por fichero: funciones analizadas, call sites totales, resueltos, `unresolved_dy
 
 ---
 
-## Caso 2b — alias local a import externo (decidido 2026-07-05, pendiente de implementar)
+## Caso 2b — alias local a import externo (decidido e implementado 2026-07-05)
 
-**Motivación:** `logger = logging.getLogger(__name__)` seguido de `logger.info(...)` cae a `unresolved_dynamic` porque `logger` es una variable local, no un import — el caso 2 solo resuelve bases que están literalmente en la tabla de imports. En agora esto son solo 8 sitios, pero el patrón es común.
+**Motivación (corregida tras verificar contra agora real):** la motivación original citaba los 8 sitios `logger.*` de agora como ejemplo de "variable local reasignada" — **incorrecto**, verificado después: esos 8 sitios son `from backend.logger import logger` (un re-export a través de un módulo *interno*, ver §Hallazgos pendientes), no una asignación local, y la valla 1 de abajo se niega correctamente a tocarlos. La motivación real, honesta, es la generalidad del patrón — no el conteo en agora: `client = anthropic.AsyncAnthropic(...)` es el idiom dominante de cualquier código que consuma una API externa (anthropic, httpx, boto3, requests-sessions, SQLAlchemy...). En agora esto son solo 2 sitios reales (`llm.py`'s `client`, `orchestrator.py`'s `match = re.search(...)`), pero en un repo BNP típico serán docenas.
 
 **Regla (extiende el caso 2, no es un caso 4):** una asignación inmediata `nombre = base_resuelta.attr(...)` donde `base_resuelta` resuelve — vía la misma tabla de imports de siempre — a un paquete **externo** al repo, es evidencia positiva de que `nombre` es un alias a ese paquete. No es inferencia de tipos: es la misma regla de "conclusión positiva" ya aplicada un nivel de indirección más allá.
 
@@ -109,6 +110,10 @@ Por fichero: funciones analizadas, call sites totales, resueltos, `unresolved_dy
 2. **Sin last-wins.** Si el nombre tiene más de una asignación con bases distintas en el mismo scope, cae a `unresolved_dynamic` — no se adivina cuál asignación "gana".
 
 Con estas dos vallas es mecánico y auditable — caso 2b, no un cuarto caso de resolución en el sentido que la nota de §Notas prohíbe.
+
+**Extensión de alcance (descubierta durante la implementación):** el patrón real dominante (`client = anthropic.AsyncAnthropic(...)`) está casi siempre a **nivel de módulo**, no dentro de una función — el caso 2b acotado solo a scope de función no llegaba a él (`llm.py`'s `client` habría quedado fuera). Se extendió el mismo mecanismo (misma función, `build_local_alias_table`, reutilizada tal cual sin cambios) para escanear también el nivel de módulo, con una regla añadida: **una reasignación local del mismo nombre dentro de una función eclipsa el alias de módulo para esa función** — igual que el scoping real de Python, un binding local siempre eclipsa uno externo/global, sea o no ese binding local en sí mismo un alias válido. El eclipsado cubre asignaciones simples, parámetros de función, `for`/`with`/`except`, unpacking por tupla/starred, `AugAssign`/`AnnAssign` y walrus — el caso de parámetros era el más importante en la práctica (`def helper(client): ...` es más común que la reasignación explícita).
+
+**Estado:** implementado y verificado contra agora — `unresolved_dynamic` 243→241 (los 2 sitios reales: `client.messages.stream(...)` en `llm.py` vía alias de módulo, `match.group(...)` en `orchestrator.py` vía alias de función).
 
 ---
 
