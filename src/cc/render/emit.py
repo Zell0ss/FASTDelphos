@@ -23,23 +23,38 @@ def emit(graph: Graph, out_dir: str | pathlib.Path) -> None:
     template = _TEMPLATE_SRC.read_text(encoding="utf-8")
 
     # Conditionally include exclusions code only if the graph has exclusions
-    exclusions_code = ""
-    if graph.exclusions and len(graph.exclusions) > 0:
-        exclusions_code = """    // ── Exclusions ────────────────────────────────────────────────────────────
-    if (GRAPH.exclusions && GRAPH.exclusions.length) {
-      const totalExcluded = GRAPH.exclusions.reduce((sum, x) => sum + x.count, 0);
-      const info = document.getElementById('exclusions-info');
-      info.textContent =
-        `compilado con ${GRAPH.exclusions.length} exclusión(es) — ${totalExcluded} ficheros fuera`;
-      info.title = GRAPH.exclusions.map(x => `${x.pattern}: ${x.count}`).join('\n');
-    }
+    # Extract the code between comment markers or leave empty
+    if graph.exclusions:
+        exclusions_start = template.find("<!-- EXCLUSIONS_START -->")
+        exclusions_end = template.find("<!-- EXCLUSIONS_END -->")
+        if exclusions_start >= 0 and exclusions_end > exclusions_start:
+            # Extract the code between markers (including newline after start marker)
+            exclusions_code = template[exclusions_start + len("<!-- EXCLUSIONS_START -->"):exclusions_end]
+        else:
+            exclusions_code = ""
+    else:
+        # Remove the entire exclusions block if no exclusions
+        exclusions_code = ""
 
-"""
+    # Replace comment markers and code with final content
+    template_with_exclusions = template
+    if exclusions_code:
+        # Keep the exclusions code as-is
+        template_with_exclusions = template_with_exclusions.replace("<!-- EXCLUSIONS_START -->", "")
+        template_with_exclusions = template_with_exclusions.replace("<!-- EXCLUSIONS_END -->", "")
+    else:
+        # Remove the entire block including markers
+        exclusions_start = template_with_exclusions.find("<!-- EXCLUSIONS_START -->")
+        exclusions_end = template_with_exclusions.find("<!-- EXCLUSIONS_END -->")
+        if exclusions_start >= 0 and exclusions_end > exclusions_start:
+            template_with_exclusions = (
+                template_with_exclusions[:exclusions_start] +
+                template_with_exclusions[exclusions_end + len("<!-- EXCLUSIONS_END -->"):]
+            )
 
     html = (
-        template.replace("__CYTOSCAPE_JS__", cytoscape_js)
+        template_with_exclusions.replace("__CYTOSCAPE_JS__", cytoscape_js)
         .replace("__CYTOSCAPE_DAGRE_JS__", cytoscape_dagre_js)
         .replace("__GRAPH_JSON__", json.dumps(graph_dict))
-        .replace("__EXCLUSIONS_CODE__", exclusions_code)
     )
     (out_dir / "index.html").write_text(html, encoding="utf-8")

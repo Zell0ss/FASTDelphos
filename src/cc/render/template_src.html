@@ -693,7 +693,16 @@
       if (!document.getElementById('search-wrap').contains(evt.target)) closeSearchDropdown();
     });
 
-    __EXCLUSIONS_CODE__
+    <!-- EXCLUSIONS_START -->
+    // ── Exclusions ────────────────────────────────────────────────────────────
+    if (GRAPH.exclusions && GRAPH.exclusions.length) {
+      const totalExcluded = GRAPH.exclusions.reduce((sum, x) => sum + x.count, 0);
+      const info = document.getElementById('exclusions-info');
+      info.textContent =
+        `compilado con ${GRAPH.exclusions.length} exclusión(es) — ${totalExcluded} ficheros fuera`;
+      info.title = GRAPH.exclusions.map(x => `${x.pattern}: ${x.count}`).join('\n');
+    }
+    <!-- EXCLUSIONS_END -->
 
     // ── Gaps ──────────────────────────────────────────────────────────────────
     if (GRAPH.gaps && GRAPH.gaps.length) {
