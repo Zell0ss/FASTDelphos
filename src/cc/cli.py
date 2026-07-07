@@ -36,12 +36,20 @@ def main() -> None:
         default=8642,
         help="Port for --serve (default: 8642)",
     )
+    comp.add_argument(
+        "--exclude",
+        action="append",
+        metavar="PATTERN",
+        help="Glob pattern (relative to the repo root) to exclude from the graph, "
+        "e.g. --exclude 'backend/tests/**'. Repeatable.",
+    )
 
     args = parser.parse_args()
 
     if args.cmd == "compile":
+        exclude_patterns = tuple(args.exclude or ())
         print(f"Compiling {args.repo} → {args.out} …")
-        run(args.repo, args.out)
+        run(args.repo, args.out, exclude_patterns=exclude_patterns)
         print(f"Done. Open {args.out}/index.html")
         if args.oracle:
             import sys
@@ -49,7 +57,7 @@ def main() -> None:
             from cc.extract.endpoints import extract_endpoints
             from cc.oracle import compare_oracle
 
-            ep_nodes, _ = extract_endpoints(args.repo)
+            ep_nodes, _ = extract_endpoints(args.repo, exclude_patterns)
             sys.path.insert(0, str(args.repo.parent))
             try:
                 result = compare_oracle(args.repo, ep_nodes)
