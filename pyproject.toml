@@ -9,6 +9,7 @@ requires-python = ">=3.11"
 dependencies = [
     "griffe>=0.47",
     "sqlglot>=25.0",
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
