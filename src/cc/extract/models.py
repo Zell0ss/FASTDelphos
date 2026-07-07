@@ -4,21 +4,25 @@ import sys
 
 import griffe
 
+from cc.extract._collect import excluded_files
 from cc.graph.hash_util import node_hash
 from cc.graph.schema import Edge, Node
 
 _SKIP_DIRS = {".venv", "__pycache__", ".git", "node_modules", ".tox", "dist", "build", "tests"}
 
 
-def _load_models(repo_path: pathlib.Path) -> dict[str, "griffe.Class"]:
+def _load_models(
+    repo_path: pathlib.Path, exclude_patterns: tuple[str, ...] = ()
+) -> dict[str, "griffe.Class"]:
     """Return short_name -> griffe.Class for all BaseModel subclasses under repo_path."""
+    excluded = excluded_files(repo_path, exclude_patterns)
     found: dict[str, griffe.Class] = {}
 
     def _try_load(pkg_name: str, search_paths: list[pathlib.Path]) -> None:
         sys.path.insert(0, str(search_paths[0]))
         try:
             pkg = griffe.load(pkg_name, search_paths=search_paths)
-            _walk_griffe(pkg, found)
+            _walk_griffe(pkg, found, excluded)
         except Exception:
             pass
         finally:
@@ -43,10 +47,17 @@ def _load_models(repo_path: pathlib.Path) -> dict[str, "griffe.Class"]:
     return found
 
 
-def _walk_griffe(obj: "griffe.Object", found: dict[str, "griffe.Class"]) -> None:
-    """Recursively walk griffe object tree, skipping unresolvable aliases."""
+def _walk_griffe(
+    obj: "griffe.Object", found: dict[str, "griffe.Class"], excluded: set[pathlib.Path]
+) -> None:
+    """Recursively walk griffe object tree, skipping unresolvable aliases and
+    anything whose source file was excluded via --exclude (griffe loads the
+    whole package from disk regardless — this prunes what survives into
+    `found`, so the model inventory agrees with what collect_py_files sees)."""
     if isinstance(obj, griffe.Alias):
         # Skip aliases to external packages (e.g. fastapi.APIRouter)
+        return
+    if getattr(obj, "filepath", None) in excluded:
         return
     if isinstance(obj, griffe.Class):
         bases = []
@@ -59,7 +70,7 @@ def _walk_griffe(obj: "griffe.Object", found: dict[str, "griffe.Class"]) -> None
             found[obj.name] = obj
     if hasattr(obj, "members"):
         for child in obj.members.values():
-            _walk_griffe(child, found)
+            _walk_griffe(child, found, excluded)
 
 
 def _griffe_fields(cls: "griffe.Class") -> list[dict]:
@@ -92,9 +103,10 @@ def _annotation_names(ann: ast.expr | None) -> list[str]:
 def extract_models(
     repo_path: str | pathlib.Path,
     handler_nodes: list[Node],
+    exclude_patterns: tuple[str, ...] = (),
 ) -> tuple[list[Node], list[Edge]]:
     repo_path = pathlib.Path(repo_path)
-    griffe_models = _load_models(repo_path)
+    griffe_models = _load_models(repo_path, exclude_patterns)
 
     model_nodes: dict[str, Node] = {}
     for short_name, cls in griffe_models.items():

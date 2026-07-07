@@ -629,3 +629,25 @@ def test_local_assignment_targets_ignores_nested_class_scope():
         "    return 1\n"
     )
     assert local_assignment_targets(fn) == set()
+
+
+def test_build_symbol_inventory_excludes_matching_files(tmp_path):
+    repo = tmp_path / "repo"
+    _write(repo, "backend/__init__.py", "")
+    _write(repo, "backend/app.py", "def keep():\n    return 1\n")
+    _write(repo, "backend/tests/__init__.py", "")
+    _write(repo, "backend/tests/helpers.py", "def drop():\n    return 2\n")
+
+    inv = build_symbol_inventory(repo, exclude_patterns=("backend/tests/**",))
+    assert "backend.app.keep" in inv.functions
+    assert "backend.tests.helpers.drop" not in inv.functions
+
+
+def test_build_symbol_inventory_no_patterns_unaffected(tmp_path):
+    repo = tmp_path / "repo"
+    _write(repo, "backend/__init__.py", "")
+    _write(repo, "backend/tests/__init__.py", "")
+    _write(repo, "backend/tests/helpers.py", "def drop():\n    return 2\n")
+
+    inv = build_symbol_inventory(repo)
+    assert "backend.tests.helpers.drop" in inv.functions

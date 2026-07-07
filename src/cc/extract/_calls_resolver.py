@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 
 import griffe
 
+from cc.extract._collect import excluded_files
+
 _SKIP_DIRS = {".venv", "__pycache__", ".git", "node_modules", ".tox", "dist", "build", "tests"}
 
 
@@ -33,8 +35,12 @@ class SymbolInventory:
     top_level_packages: set[str] = field(default_factory=set)
 
 
-def _walk_griffe_functions(obj, inv: SymbolInventory, class_stack: list[str]) -> None:
+def _walk_griffe_functions(
+    obj, inv: SymbolInventory, class_stack: list[str], excluded: set[pathlib.Path]
+) -> None:
     if isinstance(obj, griffe.Alias):
+        return
+    if getattr(obj, "filepath", None) in excluded:
         return
 
     if isinstance(obj, griffe.Function):
@@ -64,23 +70,26 @@ def _walk_griffe_functions(obj, inv: SymbolInventory, class_stack: list[str]) ->
 
     if hasattr(obj, "members"):
         for child in obj.members.values():
-            _walk_griffe_functions(child, inv, class_stack)
+            _walk_griffe_functions(child, inv, class_stack, excluded)
 
 
-def build_symbol_inventory(repo_path: str | pathlib.Path) -> SymbolInventory:
+def build_symbol_inventory(
+    repo_path: str | pathlib.Path, exclude_patterns: tuple[str, ...] = ()
+) -> SymbolInventory:
     """Load the repo's own top-level packages via griffe and collect every
     function/method qualname, class base-class relationship, and the set of
     top-level package names that belong to the repo (used later to tell
     "external" imports from "internal but unresolved" ones).
     """
     repo_path = pathlib.Path(repo_path)
+    excluded = excluded_files(repo_path, exclude_patterns)
     inv = SymbolInventory()
 
     def _try_load(pkg_name: str, search_paths: list[pathlib.Path]) -> None:
         sys.path.insert(0, str(search_paths[0]))
         try:
             pkg = griffe.load(pkg_name, search_paths=search_paths)
-            _walk_griffe_functions(pkg, inv, [])
+            _walk_griffe_functions(pkg, inv, [], excluded)
         except Exception:
             pass
         finally:
