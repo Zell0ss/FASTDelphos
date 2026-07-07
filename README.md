@@ -79,6 +79,20 @@ Every node/edge is `inferred: false` in this phase — everything you see was re
 - **Ocultar nodo** — hide a node from the current session's view (useful for noisy nodes while you explore); resets on page reload, nothing is persisted.
 - **Subgrafo / Mapa completo** — start from one endpoint's reachable subgraph (the default), or see the whole compiled graph at once. Double-click any node to pull in its immediate neighbors.
 
+## Excluding files
+
+Two layers, always. A fixed set — `.venv`, `__pycache__`, `.git`, `node_modules`, `.tox`, `dist`, `build` — is never walked, on every run, not configurable: it's vendor/tooling, never a candidate for "this repo's own source" in the first place.
+
+On top of that, `--exclude PATTERN` (repeatable, glob relative to the repo root) drops your own content — most commonly a test suite that would otherwise pollute the call-graph coverage numbers with test-only helpers and mocks:
+
+```bash
+cc compile /path/to/repo --out ./output/repo --exclude 'backend/tests/**'
+```
+
+Default is no content exclusions — explicit over implicit, nothing is silently dropped unless you ask for it. Excluded files disappear from the graph entirely: no nodes, no edges, no gaps, and they don't count toward coverage. Anything a *non-excluded* file calls into that lives in an excluded file resolves as `unresolved_dynamic` rather than a broken reference — the tool never points at code that isn't there.
+
+Active patterns and their matched-file counts are visible in the sidebar (top, under the title) and in `graph.json`'s `exclusions` field, so an exclusion is always declared, never silent.
+
 ## Gaps — what the tool won't guess
 
 When source doesn't have the answer, the tool says so instead of inventing one. Three kinds, each aimed at a different audience:
