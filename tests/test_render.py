@@ -35,6 +35,12 @@ def _minimal_graph():
     return Graph(nodes=[ep, fn], edges=[e], gaps=[])
 
 
+def _graph_with_exclusions():
+    graph = _minimal_graph()
+    graph.exclusions = [{"pattern": "backend/tests/**", "count": 3}]
+    return graph
+
+
 def test_emit_creates_json_file():
     with tempfile.TemporaryDirectory() as d:
         emit(_minimal_graph(), pathlib.Path(d))
@@ -92,3 +98,18 @@ def test_html_includes_node_panel_features():
         assert "function toggleHideNode" in html
         assert "function togglePanelRaw" in html
         assert "HUB_MIN_PERCENT" in html
+
+
+def test_html_shows_no_exclusion_summary_when_none():
+    with tempfile.TemporaryDirectory() as d:
+        emit(_minimal_graph(), pathlib.Path(d))
+        html = (pathlib.Path(d) / "index.html").read_text()
+        assert "exclusión" not in html.lower()
+
+
+def test_html_shows_exclusion_summary_when_present():
+    with tempfile.TemporaryDirectory() as d:
+        emit(_graph_with_exclusions(), pathlib.Path(d))
+        html = (pathlib.Path(d) / "index.html").read_text()
+        assert 'id="exclusions-info"' in html
+        assert "backend/tests/**" in html

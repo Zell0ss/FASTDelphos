@@ -115,11 +115,13 @@
     .neighbor-line .more { color: #556; font-size: 10px; }
     .neighbor-line .via { font-size: 9px; color: #667; margin-left: 2px; }
     .panel-raw { margin-top: 8px; }
+    #exclusions-info { font-size: 10px; color: #778; margin-bottom: 6px; }
   </style>
 </head>
 <body>
   <div id="sidebar">
     <div style="font-size:13px;font-weight:bold;color:#aad;margin-bottom:4px">Comprehension Compiler</div>
+    <div id="exclusions-info"></div>
 
     <div id="search-wrap">
       <input type="text" id="search-input" placeholder="Buscar nodo, tabla, columna, campo…" autocomplete="off">
@@ -690,6 +692,8 @@
     document.addEventListener('click', evt => {
       if (!document.getElementById('search-wrap').contains(evt.target)) closeSearchDropdown();
     });
+
+    __EXCLUSIONS_CODE__
 
     // ── Gaps ──────────────────────────────────────────────────────────────────
     if (GRAPH.gaps && GRAPH.gaps.length) {

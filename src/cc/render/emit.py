@@ -21,9 +21,25 @@ def emit(graph: Graph, out_dir: str | pathlib.Path) -> None:
     cytoscape_js = _CYTOSCAPE.read_text(encoding="utf-8")
     cytoscape_dagre_js = _CYTOSCAPE_DAGRE.read_text(encoding="utf-8")
     template = _TEMPLATE_SRC.read_text(encoding="utf-8")
+
+    # Conditionally include exclusions code only if the graph has exclusions
+    exclusions_code = ""
+    if graph.exclusions and len(graph.exclusions) > 0:
+        exclusions_code = """    // ── Exclusions ────────────────────────────────────────────────────────────
+    if (GRAPH.exclusions && GRAPH.exclusions.length) {
+      const totalExcluded = GRAPH.exclusions.reduce((sum, x) => sum + x.count, 0);
+      const info = document.getElementById('exclusions-info');
+      info.textContent =
+        `compilado con ${GRAPH.exclusions.length} exclusión(es) — ${totalExcluded} ficheros fuera`;
+      info.title = GRAPH.exclusions.map(x => `${x.pattern}: ${x.count}`).join('\n');
+    }
+
+"""
+
     html = (
         template.replace("__CYTOSCAPE_JS__", cytoscape_js)
         .replace("__CYTOSCAPE_DAGRE_JS__", cytoscape_dagre_js)
         .replace("__GRAPH_JSON__", json.dumps(graph_dict))
+        .replace("__EXCLUSIONS_CODE__", exclusions_code)
     )
     (out_dir / "index.html").write_text(html, encoding="utf-8")
