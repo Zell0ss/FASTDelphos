@@ -36,3 +36,4 @@ class Graph:
     nodes: list[Node] = field(default_factory=list)
     edges: list[Edge] = field(default_factory=list)
     gaps: list[Gap] = field(default_factory=list)
+    exclusions: list[dict] = field(default_factory=list)

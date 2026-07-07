@@ -73,3 +73,63 @@ def test_pipeline_emits_unresolved_dynamic_gap_for_fully_dynamic_sql():
         dyn_gaps = [g for g in data["gaps"] if g["kind"] == "unresolved_dynamic"]
         assert len(dyn_gaps) == 1
         assert dyn_gaps[0]["severity"] == {"comprehension": "warning", "compliance": "error"}
+
+
+def test_run_without_exclude_arg_matches_default_empty_tuple():
+    with tempfile.TemporaryDirectory() as d1, tempfile.TemporaryDirectory() as d2:
+        run(SIMPLE_API, pathlib.Path(d1))
+        run(SIMPLE_API, pathlib.Path(d2), exclude_patterns=())
+        a = (pathlib.Path(d1) / "graph.json").read_text()
+        b = (pathlib.Path(d2) / "graph.json").read_text()
+        assert a == b
+
+
+def test_pipeline_graph_json_has_empty_exclusions_by_default():
+    with tempfile.TemporaryDirectory() as d:
+        run(SIMPLE_API, pathlib.Path(d))
+        data = json.loads((pathlib.Path(d) / "graph.json").read_text())
+        assert data["exclusions"] == []
+
+
+def test_pipeline_reports_exclusions_when_patterns_given(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "app.py").write_text("def keep():\n    return 1\n", encoding="utf-8")
+    (repo / "backend" / "tests").mkdir()
+    (repo / "backend" / "tests" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "tests" / "test_app.py").write_text(
+        "def drop():\n    return 2\n", encoding="utf-8"
+    )
+    out = tmp_path / "out"
+    run(repo, out, exclude_patterns=("backend/tests/**",))
+    data = json.loads((out / "graph.json").read_text())
+    assert data["exclusions"] == [{"pattern": "backend/tests/**", "count": 2}]
+
+
+def test_excluded_run_keeps_surviving_node_ids_and_hashes_stable(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "app.py").write_text("def keep():\n    return 1\n", encoding="utf-8")
+    (repo / "backend" / "tests").mkdir()
+    (repo / "backend" / "tests" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "tests" / "test_app.py").write_text(
+        "def drop():\n    return 2\n", encoding="utf-8"
+    )
+
+    out_a = tmp_path / "out_a"
+    out_b = tmp_path / "out_b"
+    run(repo, out_a)
+    run(repo, out_b, exclude_patterns=("backend/tests/**",))
+
+    nodes_a = {n["id"]: n for n in json.loads((out_a / "graph.json").read_text())["nodes"]}
+    nodes_b = {n["id"]: n for n in json.loads((out_b / "graph.json").read_text())["nodes"]}
+
+    assert "function:backend.tests.test_app.drop" in nodes_a
+    assert "function:backend.tests.test_app.drop" not in nodes_b
+
+    common_ids = set(nodes_a) & set(nodes_b)
+    assert "function:backend.app.keep" in common_ids
+    for node_id in common_ids:
+        assert nodes_a[node_id]["hash"] == nodes_b[node_id]["hash"]

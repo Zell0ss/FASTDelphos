@@ -1,6 +1,6 @@
 import pathlib
 
-from cc.extract._collect import collect_py_files
+from cc.extract._collect import collect_py_files, exclusion_report
 from cc.extract.calls import extract_calls
 from cc.extract.endpoints import extract_endpoints
 from cc.extract.models import extract_models
@@ -11,16 +11,22 @@ from cc.graph.schema import Gap
 from cc.render.emit import emit
 
 
-def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
+def run(
+    repo_path: str | pathlib.Path,
+    out_dir: str | pathlib.Path,
+    exclude_patterns: tuple[str, ...] = (),
+) -> None:
     repo_path = pathlib.Path(repo_path)
     out_dir = pathlib.Path(out_dir)
 
-    ep_nodes, ep_edges = extract_endpoints(repo_path)
+    ep_nodes, ep_edges = extract_endpoints(repo_path, exclude_patterns)
     handler_nodes = [n for n in ep_nodes if n.type == "function"]
 
-    model_nodes, model_edges = extract_models(repo_path, handler_nodes)
-    sql_nodes, sql_edges, sql_dynamic_gaps = extract_sql(repo_path)
-    call_nodes, call_edges, call_excluded, call_coverage = extract_calls(repo_path)
+    model_nodes, model_edges = extract_models(repo_path, handler_nodes, exclude_patterns)
+    sql_nodes, sql_edges, sql_dynamic_gaps = extract_sql(repo_path, exclude_patterns)
+    call_nodes, call_edges, call_excluded, call_coverage = extract_calls(
+        repo_path, exclude_patterns
+    )
 
     # Order matters: build_graph keeps the FIRST node registered per id. Handler
     # nodes (ep_nodes) and DB-touching nodes (sql_nodes) carry more specific
@@ -31,6 +37,7 @@ def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
 
     graph = build_graph(all_nodes, all_edges)
     graph.gaps = detect_gaps(graph)
+    graph.exclusions = exclusion_report(repo_path, exclude_patterns)
 
     for filepath, error in call_excluded:
         rel = pathlib.Path(filepath).relative_to(repo_path)
@@ -60,7 +67,7 @@ def run(repo_path: str | pathlib.Path, out_dir: str | pathlib.Path) -> None:
         )
 
     if call_excluded:
-        total_files = len(collect_py_files(repo_path))
+        total_files = len(collect_py_files(repo_path, exclude_patterns))
         excluded_count = len(call_excluded)
         print(
             f"  call graph: {total_files - excluded_count}/{total_files} files analyzed"

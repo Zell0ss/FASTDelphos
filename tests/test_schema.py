@@ -61,3 +61,13 @@ def test_graph_collects_all():
     )
     graph = Graph(nodes=[n], edges=[], gaps=[])
     assert len(graph.nodes) == 1
+
+
+def test_graph_exclusions_defaults_to_empty_list():
+    graph = Graph(nodes=[], edges=[], gaps=[])
+    assert graph.exclusions == []
+
+
+def test_graph_exclusions_can_be_set():
+    graph = Graph(nodes=[], edges=[], gaps=[], exclusions=[{"pattern": "tests/**", "count": 3}])
+    assert graph.exclusions == [{"pattern": "tests/**", "count": 3}]
