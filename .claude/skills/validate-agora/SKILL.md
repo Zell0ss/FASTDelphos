@@ -24,7 +24,7 @@ Steps:
    ```bash
    python -m cc compile <agora-path> --out /tmp/cc-agora-out --oracle
    ```
-   The oracle imports `app.routes`/`app.openapi()` to produce ground truth (only valid for agora — boots clean in dev; never use in BNP context).
+   The oracle imports `app.routes`/`app.openapi()` to produce ground truth (only valid for agora — boots clean in dev; never use in Corporate context).
 
 4. Report:
    - Route recovery rate: static endpoints found vs. oracle ground truth

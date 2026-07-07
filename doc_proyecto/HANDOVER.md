@@ -72,7 +72,7 @@ comprehension-compiler/
 
 La vía de producción para endpoints/models es **puro estático** (parsear decoradores + anotaciones). NO importar la app.
 
-Excepción controlada: agora boota limpio en dev, así que CCode puede importar la app **una sola vez** (`app.routes`/`app.openapi()`) para producir un *ground truth* y medir cuánto recupera el extractor estático (diff = tasa de recuperación de rutas). Es un checker del POC, **no** la vía de producción. En BNP no existe.
+Excepción controlada: agora boota limpio en dev, así que CCode puede importar la app **una sola vez** (`app.routes`/`app.openapi()`) para producir un *ground truth* y medir cuánto recupera el extractor estático (diff = tasa de recuperación de rutas). Es un checker del POC, **no** la vía de producción. En Corporate no existe.
 
 **Requisitos de la introspección oráculo** (implementados en `oracle.py`):
 - El módulo de la app puede estar en un sub-paquete del repo (p.ej. `backend/main.py`, no `main.py` en raíz). El oracle descubre los sub-paquetes top-level y prueba `{pkg}.main`, `{pkg}.app`, `{pkg}.server`.
@@ -111,7 +111,7 @@ LLM/Capa 3 · linaje profundo (taint) · adapter `generic` · multi-repo.
 
 ## FASE 2 — Capa de comprensión (LLM / Capa 3)
 
-Enchufa sobre los anchors de fase 1. Haiku (casa) / Qwen (BNP) — intercambiables, mismo slot.
+Enchufa sobre los anchors de fase 1. Haiku (casa) / Qwen (Corporate) — intercambiables, mismo slot.
 
 ### Construye
 

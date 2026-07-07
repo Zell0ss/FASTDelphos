@@ -32,6 +32,20 @@ cc compile /path/to/repo --out ./output/myrepo --serve --port 8642
 # → Sirviendo ./output/myrepo en http://localhost:8642 — Ctrl+C para parar
 ```
 
+If the `.venv` from Quick start isn't already active in your shell (e.g. a fresh SSH session), activate it first or call the module directly — both are equivalent to the `cc` console script:
+
+```bash
+source .venv/bin/activate
+python -m cc compile /path/to/repo --out ./output/myrepo --serve --port 8642
+```
+
+The output is a fully self-contained static bundle (Cytoscape vendored inline, no network calls) — if it's already compiled and you just want to view it, you don't need `cc`, the venv, or even this repo checked out. Any static file server works, e.g. stdlib `http.server` from inside the output directory:
+
+```bash
+cd ./output/myrepo
+python3 -m http.server 8642 --bind 127.0.0.1
+```
+
 ## What you get
 
 A graph of four node types and five edge types — small enough vocabulary to hold in your head, big enough to answer real questions.
@@ -98,9 +112,24 @@ ruff check . && ruff format .
 
 Design history lives in `doc_proyecto/` (the original schema contract, `ESQUEMA_POC.md`) and `docs/superpowers/` (specs and implementation plans for everything built after the initial POC, in chronological order — useful if you want to see *why* a given piece of resolution logic exists, not just what it does).
 
+## Benchmarking against ground truth (`--oracle`)
+
+The extractor never imports the repo it's analyzing — it only parses source (`ast`, `griffe`, `sqlglot`). That's non-negotiable for a real target, since importing untrusted app code can execute arbitrary module-level side effects and may require secrets/infra the tool has no business touching.
+
+`--oracle` is a **narrow, opt-in exception for measuring the extractor itself**, not something you'd run against a client repo:
+
+```bash
+cc compile /path/to/repo --oracle
+# → Route recovery: 18/18 (100%)
+```
+
+It boots the target app for real (`app.openapi()`, which resolves mounted sub-routers) and asks it directly what routes are registered at runtime — that's the ground truth. It then diffs that list against what the static extractor found, and prints the recovery rate plus any routes the static pass missed.
+
+Use it only against a repo you're comfortable importing locally (it boots clean with no real secrets/infra — a throwaway dev copy or a test fixture, never a repo carrying production credentials). It's how this project validates its own coverage, not a feature for auditing someone else's code.
+
 ## Status
 
-Phase 1 (this repo): FastAPI adapter, fully static, zero LLM, validated against a real multi-router FastAPI + MariaDB target. Two directions considered for what comes next — not started, no timeline:
+Phase 1 (this repo): FastAPI adapter, fully static, zero LLM, validated against a real multi-router FastAPI + MariaDB target — **18/18 routes recovered (100%)** via `--oracle`. Two directions considered for what comes next — not started, no timeline:
 
 - LLM-generated why-notes per node, hash-gated so they only regenerate when the underlying code actually changes.
 - A `generic` adapter — static analysis for non-FastAPI repos, interchangeable with the LLM option without touching anything in Phase 1.

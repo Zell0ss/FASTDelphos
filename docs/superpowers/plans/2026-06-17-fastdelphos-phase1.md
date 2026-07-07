@@ -1705,7 +1705,7 @@ git commit -m "feat: FastAPI adapter, pipeline, CLI — end-to-end compile comma
 - Consumes: `repo_path: Path`, `ep_nodes: list[Node]` (from `extract_endpoints`)
 - Produces: `compare_oracle(repo_path, ep_nodes) -> dict` — `{static_count, oracle_count, recovery_rate, missing}`
 
-Note: the oracle imports the target app at runtime. Only valid for repos that boot cleanly without infra (agora yes; BNP repos, assume no). Never call from the production pipeline path.
+Note: the oracle imports the target app at runtime. Only valid for repos that boot cleanly without infra (agora yes; Corporate repos, assume no). Never call from the production pipeline path.
 
 - [ ] **Step 1: Write the failing test — `tests/test_oracle.py`**
 

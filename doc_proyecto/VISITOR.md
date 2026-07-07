@@ -26,7 +26,7 @@ pyan3 2.6.0 (revival de febrero 2026, última versión) crasheaba en los 3 fiche
 Motivos del reemplazo (por orden de peso):
 
 1. **Cobertura**: 0 aristas `calls` en la capa de servicios = eval 2 y 3 irrespondibles.
-2. **BNP**: licencia GPL-2.0 (probable veto administrativo) + bus factor 1.
+2. **Corporate**: licencia GPL-2.0 (probable veto administrativo) + bus factor 1.
 3. **Filosofía**: un visitor propio falla explícitamente con nuestra taxonomía de gaps nativa; pyan3 fallaba en opaco.
 
 ---
@@ -75,7 +75,7 @@ Un visitor sobre `ast` (stdlib) que recorre los cuerpos de función del repo tar
 
 ### Reporte de cobertura
 
-Por fichero: funciones analizadas, call sites totales, resueltos, `unresolved_dynamic`. Agregado global al final. Este reporte es producto, no debug — en BNP será la métrica de completitud de linaje.
+Por fichero: funciones analizadas, call sites totales, resueltos, `unresolved_dynamic`. Agregado global al final. Este reporte es producto, no debug — en Corporate será la métrica de completitud de linaje.
 
 ---
 
@@ -85,7 +85,7 @@ Por fichero: funciones analizadas, call sites totales, resueltos, `unresolved_dy
 
 **Cierre con datos:** tras implementar el visitor Nivel 1 y compilar agora en real, se desglosaron los 243 `unresolved_dynamic` por patrón sintáctico. Residuo genuino que Nivel 2 (jedi/pyright, inferencia de tipos) resolvería — variables locales de tipo verdaderamente desconocido, descontando lo cubierto por correlación (`reads`/`writes`/`handles` reales) y builtins: **~42 sitios, ≈6% de los 677 call sites totales de agora.** Las 3 preguntas del eval (`ESQUEMA_POC.md §Test`) ya se responden sin Nivel 2.
 
-**Decisión: Nivel 2 muere en el backlog.** Quien quiera resucitarlo argumenta contra este número — no contra la intuición de que "seguro hace falta". Si agora crece o aparece un repo BNP donde el residuo sea proporcionalmente mayor, se re-mide antes de reabrir la conversación.
+**Decisión: Nivel 2 muere en el backlog.** Quien quiera resucitarlo argumenta contra este número — no contra la intuición de que "seguro hace falta". Si agora crece o aparece un repo Corporate donde el residuo sea proporcionalmente mayor, se re-mide antes de reabrir la conversación.
 
 ---
 
@@ -101,7 +101,7 @@ Por fichero: funciones analizadas, call sites totales, resueltos, `unresolved_dy
 
 ## Caso 2b — alias local a import externo (decidido e implementado 2026-07-05)
 
-**Motivación (corregida tras verificar contra agora real):** la motivación original citaba los 8 sitios `logger.*` de agora como ejemplo de "variable local reasignada" — **incorrecto**, verificado después: esos 8 sitios son `from backend.logger import logger` (un re-export a través de un módulo *interno*, ver §Hallazgos pendientes), no una asignación local, y la valla 1 de abajo se niega correctamente a tocarlos. La motivación real, honesta, es la generalidad del patrón — no el conteo en agora: `client = anthropic.AsyncAnthropic(...)` es el idiom dominante de cualquier código que consuma una API externa (anthropic, httpx, boto3, requests-sessions, SQLAlchemy...). En agora esto son solo 2 sitios reales (`llm.py`'s `client`, `orchestrator.py`'s `match = re.search(...)`), pero en un repo BNP típico serán docenas.
+**Motivación (corregida tras verificar contra agora real):** la motivación original citaba los 8 sitios `logger.*` de agora como ejemplo de "variable local reasignada" — **incorrecto**, verificado después: esos 8 sitios son `from backend.logger import logger` (un re-export a través de un módulo *interno*, ver §Hallazgos pendientes), no una asignación local, y la valla 1 de abajo se niega correctamente a tocarlos. La motivación real, honesta, es la generalidad del patrón — no el conteo en agora: `client = anthropic.AsyncAnthropic(...)` es el idiom dominante de cualquier código que consuma una API externa (anthropic, httpx, boto3, requests-sessions, SQLAlchemy...). En agora esto son solo 2 sitios reales (`llm.py`'s `client`, `orchestrator.py`'s `match = re.search(...)`), pero en un repo Corporate típico serán docenas.
 
 **Regla (extiende el caso 2, no es un caso 4):** una asignación inmediata `nombre = base_resuelta.attr(...)` donde `base_resuelta` resuelve — vía la misma tabla de imports de siempre — a un paquete **externo** al repo, es evidencia positiva de que `nombre` es un alias a ese paquete. No es inferencia de tipos: es la misma regla de "conclusión positiva" ya aplicada un nivel de indirección más allá.
 
@@ -121,7 +121,7 @@ Con estas dos vallas es mecánico y auditable — caso 2b, no un cuarto caso de 
 
 1. **Import local a función no se resuelve (`from X import Y` dentro de un `def`).** 15 sitios en `backend/tests/`, todos resolubles en principio (la función importada ya está indexada), pero caen a `dynamic` porque la tabla de imports es deliberadamente solo-nivel-módulo. Es un límite explícito, no un bug — pero el patrón de import perezoso dentro de función también aparece fuera de tests (p.ej. para evitar imports circulares), así que no es solo ruido de test. **Pendiente:** ¿extender el rastreo de imports a nivel de función (con las mismas vallas de scope que el caso 2b), o dejarlo cerrado y que se resuelva solo cuando `tests/` tenga exclusión configurable?
 
-2. **Re-export a través de módulo interno (los 8 `logger.*` reales de agora).** Corrección sobre el análisis anterior: los 8 sitios `logger.*` **no** son una variable local reasignada (no es caso 2b) — son `from backend.logger import logger`, donde `backend.logger` es un paquete **interno** que a su vez hace `from loguru import logger`. La valla 1 del caso 2b se niega correctamente a tocarlos (la base resuelve a interno). Spike hecho (2026-07-05): `griffe.Alias.target_path` da la cadena de destino como string (`"loguru.logger"`) **sin** necesitar cargar el paquete externo — `final_target` sí lo intenta y explota con `AliasResolutionError` si no está cargado, pero no hace falta usarlo. Confirmado con repro de 2 niveles. **Lo que falta:** el inventario hoy ni siquiera registra los `griffe.Alias` a nivel de módulo (`_walk_griffe_functions` los descarta con `return` inmediato) — haría falta trackear `alias_targets: dict[canonical_path, target_path]` y perseguir la cadena con profundidad acotada hasta topar con algo fuera del propio inventario de aliases (ahí se aplica la regla de siempre: top-level package en `top_level_packages` → interno/dynamic; si no → externo). Caso borde propio: shadowing (¿y si el módulo reasigna el nombre después del import?). **Pendiente:** ¿implementar esta cadena de resolución (perfil de riesgo distinto al 2b — expande resolución a través de módulos internos, no solo alias locales), o backlog? Relevante para BNP: las fachadas de re-export internas (`utils.py` que re-exporta media stdlib) son comunes en repos corporativos.
+2. **Re-export a través de módulo interno (los 8 `logger.*` reales de agora).** Corrección sobre el análisis anterior: los 8 sitios `logger.*` **no** son una variable local reasignada (no es caso 2b) — son `from backend.logger import logger`, donde `backend.logger` es un paquete **interno** que a su vez hace `from loguru import logger`. La valla 1 del caso 2b se niega correctamente a tocarlos (la base resuelve a interno). Spike hecho (2026-07-05): `griffe.Alias.target_path` da la cadena de destino como string (`"loguru.logger"`) **sin** necesitar cargar el paquete externo — `final_target` sí lo intenta y explota con `AliasResolutionError` si no está cargado, pero no hace falta usarlo. Confirmado con repro de 2 niveles. **Lo que falta:** el inventario hoy ni siquiera registra los `griffe.Alias` a nivel de módulo (`_walk_griffe_functions` los descarta con `return` inmediato) — haría falta trackear `alias_targets: dict[canonical_path, target_path]` y perseguir la cadena con profundidad acotada hasta topar con algo fuera del propio inventario de aliases (ahí se aplica la regla de siempre: top-level package en `top_level_packages` → interno/dynamic; si no → externo). Caso borde propio: shadowing (¿y si el módulo reasigna el nombre después del import?). **Pendiente:** ¿implementar esta cadena de resolución (perfil de riesgo distinto al 2b — expande resolución a través de módulos internos, no solo alias locales), o backlog? Relevante para Corporate: las fachadas de re-export internas (`utils.py` que re-exporta media stdlib) son comunes en repos corporativos.
 
 ---
 

@@ -90,13 +90,13 @@ Gap fields: `kind`, `where` (file:line + node id), `missing` (human description)
 - Stack: FastAPI + aiomysql + MariaDB (`tertulia_db`)
 - SQL: raw queries, no ORM
 - Known tables: `profiles`, `channels`, `channel_profiles`, `messages`, `summaries`, `channel_syntheses`
-- **Oracle check:** `app.routes` / `app.openapi()` import is valid ONLY for agora (boots clean in dev). Use to measure static recovery rate vs. ground truth. This is a POC validator, NOT the production extraction path. Do not use in BNP context.
+- **Oracle check:** `app.routes` / `app.openapi()` import is valid ONLY for agora (boots clean in dev). Use to measure static recovery rate vs. ground truth. This is a POC validator, NOT the production extraction path. Do not use in Corporate context.
 
 ## Phase 1 Acceptance Criteria
 
 1. The 3 eval questions (`ESQUEMA_POC.md §Test`) answered faster by navigating the graph than by grep+read.
 2. Every `table` without inferable columns appears as an actionable gap, not an empty node.
-3. Route recovery rate reported (static vs. oracle).
+3. Route recovery rate reported (static vs. oracle). ✅ **18/18 (100%)** against agora, `cc compile /data/agora --oracle` (2026-07-07) — zero routes missing from static extraction.
 4. Call graph recoveries validated by Josem against agora.
 
 ## Commands

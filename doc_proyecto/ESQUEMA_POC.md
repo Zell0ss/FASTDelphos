@@ -7,7 +7,7 @@
 
 ## Principios
 
-- **Source-only, cero infra.** El tool lee código y nada más. Nunca conecta a BD, secrets ni servicios. Esto es lo que lo hace instalable en BNP sin preparativos.
+- **Source-only, cero infra.** El tool lee código y nada más. Nunca conecta a BD, secrets ni servicios. Esto es lo que lo hace instalable en Corporate sin preparativos.
 - **Determinista primero; LLM racionado y siempre marcado** (`inferred`). El LLM queda fuera del POC.
 - **El grafo se regenera desde el código en cada run** (build artifact, no una BD persistida). Añadir tipos de nodo/arista después es barato. Lo único caro de cambiar son los anclajes de caché (`id`, `hash`, `inferred`).
 - **Comportamiento de compilador.** Un hueco que no sale de la fuente no se adivina: se declara y se pide la señal que falta (ver Huecos). Trinquete de legibilidad — cada run deja el repo más auto-descriptivo, y los huecos solo bajan.
@@ -62,7 +62,7 @@ Mecanismo Capa 3 (futuro): la anotación guarda el `hash` contra el que se gener
 
 **Endpoints + models**
 - Por defecto: **puro estático** — parsear decoradores `@router.*`/`@app.*` + anotaciones de tipo del handler. Portable, no importa nada.
-- Acelerador opcional: introspección runtime (`app.routes`, `app.openapi()`) **solo donde la app arranca limpia sin tocar infra** (agora sí; repos BNP, asumir que no).
+- Acelerador opcional: introspección runtime (`app.routes`, `app.openapi()`) **solo donde la app arranca limpia sin tocar infra** (agora sí; repos Corporate, asumir que no).
 
 **calls**
 - pyan3 best-effort, `inferred=false` con agujeros asumidos (indirección, `Depends`, dispatch dinámico).
