@@ -128,7 +128,7 @@ def _find_enclosing_function(
 
 
 def extract_sql(
-    repo_path: str | pathlib.Path,
+    repo_path: str | pathlib.Path, exclude_patterns: tuple[str, ...] = ()
 ) -> tuple[list[Node], list[Edge], list[tuple[str, int, str]]]:
     repo_path = pathlib.Path(repo_path)
     table_columns: dict[str, set[str]] = defaultdict(set)
@@ -138,7 +138,7 @@ def extract_sql(
     ] = []  # (fn_qname, table, op, via, file, lineno)
     dynamic_gaps: list[tuple[str, int, str]] = []
 
-    for file in collect_py_files(repo_path):
+    for file in collect_py_files(repo_path, exclude_patterns):
         source = file.read_text(encoding="utf-8")
         try:
             tree = ast.parse(source, filename=str(file))

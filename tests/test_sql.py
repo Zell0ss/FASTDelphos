@@ -120,3 +120,16 @@ def test_fully_dynamic_sql_with_no_static_verb_or_table_is_a_gap(tmp_path):
     file, lineno, fn_qname = dynamic_gaps[0]
     assert lineno == 2
     assert fn_qname == "db.run_query"
+
+
+def test_extract_sql_respects_exclude_patterns(tmp_path):
+    _write(tmp_path, "backend/db.py", (
+        "async def get_kept(cur):\n    await cur.execute('SELECT * FROM kept_table')\n"
+    ))
+    _write(tmp_path, "backend/tests/db.py", (
+        "async def get_dropped(cur):\n    await cur.execute('SELECT * FROM dropped_table')\n"
+    ))
+    nodes, _, _ = extract_sql(tmp_path, exclude_patterns=("backend/tests/**",))
+    table_names = {n.props["name"] for n in nodes if n.type == "table"}
+    assert "kept_table" in table_names
+    assert "dropped_table" not in table_names

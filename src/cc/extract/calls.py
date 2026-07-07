@@ -49,6 +49,7 @@ def _zero_counts() -> dict:
 
 def extract_calls(
     repo_path: str | pathlib.Path,
+    exclude_patterns: tuple[str, ...] = (),
 ) -> tuple[list[Node], list[Edge], list[tuple[str, str]], dict]:
     """Return (function nodes, call edges, [(excluded_file, error_msg)], coverage).
 
@@ -57,11 +58,11 @@ def extract_calls(
               "resolved_external", "unresolved_dynamic"}.
     """
     repo_path = pathlib.Path(repo_path)
-    files = collect_py_files(repo_path)
+    files = collect_py_files(repo_path, exclude_patterns)
     if not files:
         return [], [], [], {"per_file": {}, "total": _zero_counts()}
 
-    inventory = build_symbol_inventory(repo_path)
+    inventory = build_symbol_inventory(repo_path, exclude_patterns)
 
     nodes: dict[str, Node] = {}
     edges: list[Edge] = []

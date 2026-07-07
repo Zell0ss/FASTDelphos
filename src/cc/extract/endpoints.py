@@ -68,12 +68,14 @@ def _collect_include_prefixes(tree: ast.Module) -> dict[str, str]:
     return extras
 
 
-def extract_endpoints(repo_path: str | pathlib.Path) -> tuple[list[Node], list[Edge]]:
+def extract_endpoints(
+    repo_path: str | pathlib.Path, exclude_patterns: tuple[str, ...] = ()
+) -> tuple[list[Node], list[Edge]]:
     repo_path = pathlib.Path(repo_path)
     nodes: list[Node] = []
     edges: list[Edge] = []
 
-    for file in collect_py_files(repo_path):
+    for file in collect_py_files(repo_path, exclude_patterns):
         source = file.read_text(encoding="utf-8")
         try:
             tree = ast.parse(source, filename=str(file))
