@@ -45,15 +45,13 @@ def test_extract_models_excludes_matching_files(tmp_path):
     (repo / "backend").mkdir(parents=True)
     (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
     (repo / "backend" / "schemas.py").write_text(
-        "from pydantic import BaseModel\n\n\n"
-        "class Kept(BaseModel):\n    x: int\n",
+        "from pydantic import BaseModel\n\n\nclass Kept(BaseModel):\n    x: int\n",
         encoding="utf-8",
     )
     (repo / "backend" / "tests").mkdir()
     (repo / "backend" / "tests" / "__init__.py").write_text("", encoding="utf-8")
     (repo / "backend" / "tests" / "schemas.py").write_text(
-        "from pydantic import BaseModel\n\n\n"
-        "class Dropped(BaseModel):\n    y: int\n",
+        "from pydantic import BaseModel\n\n\nclass Dropped(BaseModel):\n    y: int\n",
         encoding="utf-8",
     )
     nodes, _ = extract_models(repo, [], exclude_patterns=("backend/tests/**",))

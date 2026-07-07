@@ -14,8 +14,7 @@ def test_call_into_excluded_file_falls_to_dynamic_not_phantom_node(tmp_path):
     (tmp_path / "backend").mkdir()
     (tmp_path / "backend" / "__init__.py").write_text("", encoding="utf-8")
     (tmp_path / "backend" / "app.py").write_text(
-        "from backend.tests.helpers import helper\n\n\n"
-        "def use_it():\n    return helper()\n",
+        "from backend.tests.helpers import helper\n\n\ndef use_it():\n    return helper()\n",
         encoding="utf-8",
     )
     (tmp_path / "backend" / "tests").mkdir()
@@ -38,9 +37,7 @@ def test_call_into_excluded_file_falls_to_dynamic_not_phantom_node(tmp_path):
 def test_extract_calls_excluded_file_produces_no_own_nodes(tmp_path):
     (tmp_path / "backend").mkdir()
     (tmp_path / "backend" / "__init__.py").write_text("", encoding="utf-8")
-    (tmp_path / "backend" / "app.py").write_text(
-        "def keep():\n    return 1\n", encoding="utf-8"
-    )
+    (tmp_path / "backend" / "app.py").write_text("def keep():\n    return 1\n", encoding="utf-8")
     (tmp_path / "backend" / "tests").mkdir()
     (tmp_path / "backend" / "tests" / "__init__.py").write_text("", encoding="utf-8")
     (tmp_path / "backend" / "tests" / "test_app.py").write_text(
@@ -189,7 +186,11 @@ def test_unknown_filepath_callee_does_not_crash(tmp_path, monkeypatch):
         functions={"user.helper": FuncInfo("user.helper", "unknown", 1, 1, "function")},
         top_level_packages={"user"},
     )
-    monkeypatch.setattr(calls_mod, "build_symbol_inventory", lambda repo_path, exclude_patterns=(): fake_inventory)
+    monkeypatch.setattr(
+        calls_mod,
+        "build_symbol_inventory",
+        lambda repo_path, exclude_patterns=(): fake_inventory,
+    )
     # `user.py` at the repo root has module_qname "user", so case 1's module-local
     # check (`candidate = f"{module_qname}.{name}"`) resolves `helper(x)` to
     # "user.helper" directly — matching the fake inventory's (unhydratable) entry.

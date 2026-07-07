@@ -93,7 +93,10 @@ def test_fstring_dynamic_prefix_before_table_does_not_fabricate_edge(tmp_path):
         "db.py",
         (
             "async def insert_dynamic(cur, prefix, values):\n"
-            '    await cur.execute(f"INSERT INTO {prefix}channels (a, b) VALUES (%s, %s)", values)\n'
+            '    await cur.execute(\n'
+            '        f"INSERT INTO {prefix}channels (a, b) VALUES (%s, %s)",\n'
+            '        values,\n'
+            '    )\n'
         ),
     )
     nodes, edges, dynamic_gaps = extract_sql(tmp_path)
@@ -123,12 +126,16 @@ def test_fully_dynamic_sql_with_no_static_verb_or_table_is_a_gap(tmp_path):
 
 
 def test_extract_sql_respects_exclude_patterns(tmp_path):
-    _write(tmp_path, "backend/db.py", (
-        "async def get_kept(cur):\n    await cur.execute('SELECT * FROM kept_table')\n"
-    ))
-    _write(tmp_path, "backend/tests/db.py", (
-        "async def get_dropped(cur):\n    await cur.execute('SELECT * FROM dropped_table')\n"
-    ))
+    _write(
+        tmp_path,
+        "backend/db.py",
+        ("async def get_kept(cur):\n    await cur.execute('SELECT * FROM kept_table')\n"),
+    )
+    _write(
+        tmp_path,
+        "backend/tests/db.py",
+        ("async def get_dropped(cur):\n    await cur.execute('SELECT * FROM dropped_table')\n"),
+    )
     nodes, _, _ = extract_sql(tmp_path, exclude_patterns=("backend/tests/**",))
     table_names = {n.props["name"] for n in nodes if n.type == "table"}
     assert "kept_table" in table_names
