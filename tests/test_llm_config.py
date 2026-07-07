@@ -110,3 +110,48 @@ def test_config_error_message_never_contains_key_value():
         pytest.fail("expected LLMConfigError")
     except LLMConfigError as exc:
         assert "sk-super-secret-value" not in str(exc)
+
+
+def test_production_path_env_vars_win_over_dotenv_file(monkeypatch, tmp_path):
+    # This test exercises the actual production path (env=None) where
+    # load_config() merges a real .env file with real os.environ,
+    # with real env vars winning the precedence battle.
+    # We use tmp_path + monkeypatch.chdir() to isolate to a temp directory
+    # so we don't depend on or touch the real repo-root .env file.
+
+    # Change to temp directory so load_config()'s dotenv_values(".env") reads our test file
+    monkeypatch.chdir(tmp_path)
+
+    # Create a .env file with test values (some will be overridden by env vars)
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "CC_LLM_PROVIDER=openai_compatible\n"
+        "CC_LLM_MODEL=file-model\n"
+        "CC_LLM_MAX_TOKENS=111\n"
+        "CC_LLM_EXTRA_INSTRUCTIONS=from-file\n"
+    )
+
+    # Set real env vars for some keys (these will win over .env values)
+    # and omit CC_LLM_MAX_TOKENS from env (so it falls back to .env)
+    monkeypatch.setenv("CC_LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("CC_LLM_API_KEY", "test-api-key")
+    monkeypatch.setenv("CC_LLM_MODEL", "env-model")
+
+    # Call load_config() with NO arguments — this triggers the production path
+    # where _read_env(None) merges dotenv + os.environ
+    config = load_config()
+
+    # Assert: env vars win where both are set (provider)
+    assert config.provider == "anthropic", "env var should override .env file for provider"
+
+    # Assert: env vars win where both are set (model)
+    assert config.model == "env-model", "env var should override .env file for model"
+
+    # Assert: .env file is used as fallback where env var is not set
+    assert config.max_tokens == 111, ".env file should provide value when env var absent"
+
+    # Assert: env var from the real environment is used
+    assert config.api_key == "test-api-key"
+
+    # Assert: unused .env vars are still read (not shadowed by env vars)
+    assert config.extra_instructions == "from-file"
