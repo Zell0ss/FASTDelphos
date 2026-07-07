@@ -30,6 +30,7 @@ class AnthropicClient:
                 ],
                 messages=[{"role": "user", "content": user}],
             )
+            return response.content[0].text
         except Exception as exc:
             # Deliberately broad: we wrap ANY failure from the SDK call
             # (network, API, timeout, malformed request) into one type so
@@ -38,5 +39,3 @@ class AnthropicClient:
             # guaranteed free of the API key across versions/paths, so we
             # only ever surface the exception's type name.
             raise LLMGenerationError(f"Anthropic generation failed: {type(exc).__name__}") from exc
-
-        return response.content[0].text

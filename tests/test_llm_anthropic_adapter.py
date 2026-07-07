@@ -142,3 +142,28 @@ def test_constructing_without_injected_client_builds_a_real_anthropic_client():
 
     adapter = AnthropicClient(_config())
     assert isinstance(adapter._client, anthropic.Anthropic)
+
+
+def test_generate_wraps_response_parsing_failure_as_llm_generation_error():
+    # Verify that failures during response-parsing (e.g. empty .content list)
+    # are caught and wrapped as LLMGenerationError, not leaked as raw IndexError.
+    class _FakeResponseWithEmptyContent:
+        content = []
+
+    class _FakeMessagesReturningEmptyContent:
+        def create(self, **kwargs):
+            return _FakeResponseWithEmptyContent()
+
+    class _FakeClientWithBadMessages:
+        def __init__(self):
+            self.messages = _FakeMessagesReturningEmptyContent()
+
+    adapter = AnthropicClient(_config(), client=_FakeClientWithBadMessages())
+
+    with pytest.raises(LLMGenerationError) as exc_info:
+        adapter.generate(system="sys", user="usr")
+
+    # Verify the wrapped message doesn't leak the underlying IndexError details
+    error_msg = str(exc_info.value)
+    assert "IndexError" in error_msg
+    assert "Anthropic generation failed:" in error_msg
