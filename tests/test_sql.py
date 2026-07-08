@@ -1,6 +1,8 @@
+import ast
 import pathlib
 
-from cc.extract.sql import extract_sql
+from cc.extract._calls_resolver import FuncInfo, SymbolInventory
+from cc.extract.sql import _find_enclosing_function, extract_sql
 from tests.conftest import SIMPLE_API
 
 
@@ -140,3 +142,76 @@ def test_extract_sql_respects_exclude_patterns(tmp_path):
     table_names = {n.props["name"] for n in nodes if n.type == "table"}
     assert "kept_table" in table_names
     assert "dropped_table" not in table_names
+
+
+def test_find_enclosing_function_returns_def_span():
+    source = (
+        "async def get_message(conn, msg_id):\n"
+        "    return await conn.fetchone('SELECT 1', (msg_id,))\n"
+    )
+    tree = ast.parse(source)
+    call_node = next(n for n in ast.walk(tree) if isinstance(n, ast.Call))
+    qname, start, end = _find_enclosing_function(call_node, tree, "db")
+    assert qname == "db.get_message"
+    assert start == 1
+    assert end == 2
+
+
+def test_find_enclosing_function_module_level_returns_none_span():
+    source = "CUR.execute('SELECT 1')\n"
+    tree = ast.parse(source)
+    call_node = next(n for n in ast.walk(tree) if isinstance(n, ast.Call))
+    qname, start, end = _find_enclosing_function(call_node, tree, "db")
+    assert qname == "db"
+    assert start is None
+    assert end is None
+
+
+def test_function_node_uses_def_line_from_inventory_not_call_site(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / "db.py").write_text(
+        "async def create_message(conn, content):\n"
+        "    await conn.execute(\n"
+        "        'INSERT INTO messages (content) VALUES (%s)', (content,)\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+    inventory = SymbolInventory(
+        functions={
+            "db.create_message": FuncInfo(
+                qualname="db.create_message",
+                file=str(repo / "db.py"),
+                lineno=1,
+                endlineno=4,
+                kind="function",
+            )
+        }
+    )
+    nodes, _, _ = extract_sql(repo, inventory=inventory)
+    fn_node = next(n for n in nodes if n.id == "function:db.create_message")
+    assert fn_node.line == 1  # the `async def` line, not line 2's execute() call
+    assert fn_node.file == str(repo / "db.py")
+
+
+def test_function_node_falls_back_to_ast_span_when_not_in_inventory(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / "db.py").write_text(
+        "async def create_message(conn, content):\n"
+        "    await conn.execute(\n"
+        "        'INSERT INTO messages (content) VALUES (%s)', (content,)\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+    empty_inventory = SymbolInventory(functions={})
+    nodes, _, _ = extract_sql(repo, inventory=empty_inventory)
+    fn_node = next(n for n in nodes if n.id == "function:db.create_message")
+    assert fn_node.line == 1  # AST fallback still finds the real def line
+    assert fn_node.file == str(repo / "db.py")
+
+
+def test_extract_sql_without_inventory_arg_still_works():
+    # Backward compatibility: existing 2-positional-arg call sites (no inventory).
+    nodes, edges, gaps = extract_sql(SIMPLE_API)
+    assert any(n.type == "table" for n in nodes)
