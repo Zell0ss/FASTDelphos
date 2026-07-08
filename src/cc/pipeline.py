@@ -1,3 +1,4 @@
+import ast
 import pathlib
 
 from cc.extract._calls_resolver import build_symbol_inventory
@@ -21,16 +22,19 @@ def run(
     out_dir = pathlib.Path(out_dir)
 
     inventory = build_symbol_inventory(repo_path, exclude_patterns)
+    ast_cache: dict[str, ast.Module | None] = {}
 
-    ep_nodes, ep_edges = extract_endpoints(repo_path, exclude_patterns)
+    ep_nodes, ep_edges = extract_endpoints(
+        repo_path, exclude_patterns, inventory=inventory, ast_cache=ast_cache
+    )
     handler_nodes = [n for n in ep_nodes if n.type == "function"]
 
     model_nodes, model_edges = extract_models(repo_path, handler_nodes, exclude_patterns)
     sql_nodes, sql_edges, sql_dynamic_gaps = extract_sql(
-        repo_path, exclude_patterns, inventory=inventory
+        repo_path, exclude_patterns, inventory=inventory, ast_cache=ast_cache
     )
     call_nodes, call_edges, call_excluded, call_coverage = extract_calls(
-        repo_path, exclude_patterns, inventory=inventory
+        repo_path, exclude_patterns, inventory=inventory, ast_cache=ast_cache
     )
 
     # Order still matters for which extractor's `props` win a given id (e.g.

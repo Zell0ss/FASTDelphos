@@ -1,8 +1,9 @@
 import ast
 import pathlib
 
+from cc.extract._calls_resolver import SymbolInventory, build_symbol_inventory
 from cc.extract._collect import collect_py_files
-from cc.graph.hash_util import node_hash
+from cc.extract._node_hydration import hydrate_function_node, node_from_ast_def
 from cc.graph.schema import Edge, Node
 
 _HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
@@ -69,9 +70,16 @@ def _collect_include_prefixes(tree: ast.Module) -> dict[str, str]:
 
 
 def extract_endpoints(
-    repo_path: str | pathlib.Path, exclude_patterns: tuple[str, ...] = ()
+    repo_path: str | pathlib.Path,
+    exclude_patterns: tuple[str, ...] = (),
+    inventory: SymbolInventory | None = None,
+    ast_cache: dict[str, ast.Module | None] | None = None,
 ) -> tuple[list[Node], list[Edge]]:
     repo_path = pathlib.Path(repo_path)
+    if inventory is None:
+        inventory = build_symbol_inventory(repo_path, exclude_patterns)
+    if ast_cache is None:
+        ast_cache = {}
     nodes: list[Node] = []
     edges: list[Edge] = []
 
@@ -112,26 +120,20 @@ def extract_endpoints(
                 ep_id = f"endpoint:{method.upper()}:{full_path}"
                 fn_id = f"function:{handler_qname}"
 
-                ep_hash = node_hash(file, fn_node.lineno, fn_node.end_lineno)
-                fn_hash = ep_hash  # same source span
+                fn_node_obj = hydrate_function_node(handler_qname, inventory, ast_cache, is_handler=True)
+                if fn_node_obj is None:
+                    fn_node_obj = node_from_ast_def(
+                        fn_node, str(file), handler_qname, "function", is_handler=True
+                    )
 
                 ep_node = Node(
                     id=ep_id,
                     type="endpoint",
                     file=str(file),
-                    line=fn_node.lineno,
-                    hash=ep_hash,
+                    line=fn_node_obj.line,
+                    hash=fn_node_obj.hash,
                     inferred=False,
                     props={"method": method.upper(), "path": full_path, "handler": handler_qname},
-                )
-                fn_node_obj = Node(
-                    id=fn_id,
-                    type="function",
-                    file=str(file),
-                    line=fn_node.lineno,
-                    hash=fn_hash,
-                    inferred=False,
-                    props={"qualname": handler_qname, "kind": "function", "is_handler": True},
                 )
                 edge = Edge(from_=ep_id, to=fn_id, type="handles", inferred=False, props={})
 

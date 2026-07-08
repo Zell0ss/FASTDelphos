@@ -172,3 +172,26 @@ def test_db_function_node_uses_def_line_not_call_site_line():
         assert fn_node["line"] == 1
         expected_hash = node_hash(SIMPLE_API / "db.py", 1, 5)
         assert fn_node["hash"] == expected_hash
+
+
+def test_pipeline_shares_ast_cache_across_all_three_extractors(tmp_path):
+    # Not a behavior test — a wiring smoke test: the pipeline must not crash
+    # when endpoints.py also needs inventory/ast_cache now.
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "api.py").write_text(
+        "from fastapi import APIRouter\n"
+        "\n"
+        "router = APIRouter()\n"
+        "\n"
+        "\n"
+        '@router.get("/x")\n'
+        "def handler():\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+    run(repo, out)
+    data = json.loads((out / "graph.json").read_text())
+    assert any(n["type"] == "endpoint" for n in data["nodes"])

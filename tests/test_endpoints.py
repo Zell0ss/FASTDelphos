@@ -60,3 +60,35 @@ def test_extract_endpoints_respects_exclude_patterns(tmp_path):
     nodes, _ = extract_endpoints(tmp_path, exclude_patterns=("backend/tests/**",))
     paths = {n.props["path"] for n in nodes if n.type == "endpoint"}
     assert paths == {"/kept"}
+
+
+def test_decorated_handler_gets_decorator_inclusive_hash(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "api.py").write_text(
+        "from fastapi import APIRouter\n"
+        "\n"
+        "router = APIRouter()\n"
+        "\n"
+        "\n"
+        "def audit(fn):\n"
+        "    return fn\n"
+        "\n"
+        "\n"
+        "@audit\n"
+        '@router.get("/x")\n'
+        "def handler():\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    nodes, edges = extract_endpoints(repo)
+    fn_node = next(n for n in nodes if n.type == "function")
+    ep_node = next(n for n in nodes if n.type == "endpoint")
+    assert fn_node.line == 12  # the `def` line, not either decorator (10 or 11)
+    from cc.graph.hash_util import node_hash
+
+    expected_hash = node_hash(repo / "backend" / "api.py", 10, 13)  # both decorators through end
+    assert fn_node.hash == expected_hash
+    assert ep_node.line == fn_node.line  # endpoint and handler still share the same span
+    assert ep_node.hash == fn_node.hash
