@@ -2,6 +2,7 @@ import json
 import pathlib
 import tempfile
 
+from cc.graph.hash_util import node_hash
 from cc.pipeline import run
 from tests.conftest import SIMPLE_API
 
@@ -158,3 +159,16 @@ def test_pipeline_builds_inventory_once_and_shares_it(tmp_path, monkeypatch):
     data = json.loads((out / "graph.json").read_text())
     fn_node = next(n for n in data["nodes"] if n["id"] == "function:backend.db.get_active_roster")
     assert fn_node["line"] == 1  # the `async def` line, not the execute() call's line 2
+
+
+def test_db_function_node_uses_def_line_not_call_site_line():
+    # Original bug report: tests/fixtures/simple_api/db.py's create_message
+    # is defined at line 1, but before this fix the compiled graph reported
+    # line 2 (the `await conn.execute(...)` call site inside it).
+    with tempfile.TemporaryDirectory() as d:
+        run(SIMPLE_API, pathlib.Path(d))
+        data = json.loads((pathlib.Path(d) / "graph.json").read_text())
+        fn_node = next(n for n in data["nodes"] if n["id"] == "function:db.create_message")
+        assert fn_node["line"] == 1
+        expected_hash = node_hash(SIMPLE_API / "db.py", 1, 5)
+        assert fn_node["hash"] == expected_hash
