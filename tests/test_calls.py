@@ -1,3 +1,4 @@
+from cc.extract._calls_resolver import build_symbol_inventory
 from cc.extract.calls import extract_calls
 from tests.conftest import CALLS_REPO
 
@@ -272,3 +273,16 @@ def test_case_2b_parameter_shadows_module_alias(tmp_path):
     per_file = coverage["per_file"]["mod.py"]
     assert per_file["resolved_external"] == 0
     assert per_file["unresolved_dynamic"] == 1
+
+
+def test_extract_calls_accepts_a_prebuilt_inventory():
+    inventory = build_symbol_inventory(CALLS_REPO)
+    nodes, edges, excluded, coverage = extract_calls(CALLS_REPO, inventory=inventory)
+    assert len(nodes) > 0
+    assert coverage["total"]["functions"] > 0
+
+
+def test_extract_calls_without_inventory_arg_still_works():
+    # Backward compatibility: existing 2-positional-arg call sites (no inventory).
+    nodes, edges, excluded, coverage = extract_calls(CALLS_REPO)
+    assert len(nodes) > 0

@@ -2,6 +2,7 @@ import ast
 import pathlib
 
 from cc.extract._calls_resolver import (
+    SymbolInventory,
     build_import_table,
     build_local_alias_table,
     build_symbol_inventory,
@@ -50,6 +51,7 @@ def _zero_counts() -> dict:
 def extract_calls(
     repo_path: str | pathlib.Path,
     exclude_patterns: tuple[str, ...] = (),
+    inventory: "SymbolInventory | None" = None,
 ) -> tuple[list[Node], list[Edge], list[tuple[str, str]], dict]:
     """Return (function nodes, call edges, [(excluded_file, error_msg)], coverage).
 
@@ -62,7 +64,8 @@ def extract_calls(
     if not files:
         return [], [], [], {"per_file": {}, "total": _zero_counts()}
 
-    inventory = build_symbol_inventory(repo_path, exclude_patterns)
+    if inventory is None:
+        inventory = build_symbol_inventory(repo_path, exclude_patterns)
 
     nodes: dict[str, Node] = {}
     edges: list[Edge] = []

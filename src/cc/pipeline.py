@@ -1,5 +1,6 @@
 import pathlib
 
+from cc.extract._calls_resolver import build_symbol_inventory
 from cc.extract._collect import collect_py_files, exclusion_report
 from cc.extract.calls import extract_calls
 from cc.extract.endpoints import extract_endpoints
@@ -19,19 +20,24 @@ def run(
     repo_path = pathlib.Path(repo_path)
     out_dir = pathlib.Path(out_dir)
 
+    inventory = build_symbol_inventory(repo_path, exclude_patterns)
+
     ep_nodes, ep_edges = extract_endpoints(repo_path, exclude_patterns)
     handler_nodes = [n for n in ep_nodes if n.type == "function"]
 
     model_nodes, model_edges = extract_models(repo_path, handler_nodes, exclude_patterns)
-    sql_nodes, sql_edges, sql_dynamic_gaps = extract_sql(repo_path, exclude_patterns)
+    sql_nodes, sql_edges, sql_dynamic_gaps = extract_sql(
+        repo_path, exclude_patterns, inventory=inventory
+    )
     call_nodes, call_edges, call_excluded, call_coverage = extract_calls(
-        repo_path, exclude_patterns
+        repo_path, exclude_patterns, inventory=inventory
     )
 
-    # Order matters: build_graph keeps the FIRST node registered per id. Handler
-    # nodes (ep_nodes) and DB-touching nodes (sql_nodes) carry more specific
-    # props (is_handler=True, etc.) than the generic function stub the call
-    # visitor emits for the same id, so they must come first.
+    # Order still matters for which extractor's `props` win a given id (e.g.
+    # an endpoint handler's is_handler=True vs. the call visitor's generic
+    # stub) — but file/line/hash correctness no longer depends on it: sql.py
+    # and calls.py both hydrate from the same shared `inventory` now, and
+    # graph/build.py raises if two sources ever disagree on identity again.
     all_nodes = ep_nodes + model_nodes + sql_nodes + call_nodes
     all_edges = ep_edges + model_edges + sql_edges + call_edges
 

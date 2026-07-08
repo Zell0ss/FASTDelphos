@@ -133,3 +133,28 @@ def test_excluded_run_keeps_surviving_node_ids_and_hashes_stable(tmp_path):
     assert "function:backend.app.keep" in common_ids
     for node_id in common_ids:
         assert nodes_a[node_id]["hash"] == nodes_b[node_id]["hash"]
+
+
+def test_pipeline_builds_inventory_once_and_shares_it(tmp_path, monkeypatch):
+    # A DB-touching function that's ALSO called by another function — this is
+    # exactly the scenario where sql.py and calls.py must agree on identity.
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "db.py").write_text(
+        "async def get_active_roster(cur, channel_id):\n"
+        "    await cur.execute('SELECT * FROM channels WHERE id = %s', (channel_id,))\n",
+        encoding="utf-8",
+    )
+    (repo / "backend" / "service.py").write_text(
+        "from .db import get_active_roster\n"
+        "\n"
+        "async def run_turn(cur, channel_id):\n"
+        "    return await get_active_roster(cur, channel_id)\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+    run(repo, out)
+    data = json.loads((out / "graph.json").read_text())
+    fn_node = next(n for n in data["nodes"] if n["id"] == "function:backend.db.get_active_roster")
+    assert fn_node["line"] == 1  # the `async def` line, not the execute() call's line 2
