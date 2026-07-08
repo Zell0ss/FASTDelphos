@@ -9,6 +9,8 @@ def test_system_prompt_forbids_paraphrasing_and_line_by_line_description():
     system = build_system_prompt(None)
     assert "PROHIBIDO" in system
     assert "línea a línea" in system
+    assert "nombre de la función" in system  # Prohibition 2: don't repeat function name
+    assert "listar sus llamadas" in system  # Prohibition 3: don't list calls/tables
 
 
 def test_system_prompt_appends_extra_instructions_when_present():
