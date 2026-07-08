@@ -48,3 +48,38 @@ different, wider-blast-radius decision that hasn't been made.
 **Relevance beyond agora:** internal re-export facades (a `utils.py` that re-exports half
 the stdlib, a `logger.py` wrapping a third-party logger) are a common pattern in corporate
 repos — this is very likely to recur in a Corporate-style target, not an agora-specific quirk.
+
+## `_module_qualname` inconsistency for `__init__.py`-defined functions
+
+**Status:** ⏳ not implemented, deliberately deferred — confirmed real, low blast radius so
+far. Found 2026-07-08 while fixing the SQL function-node hydration bug (see
+`docs/superpowers/plans/2026-07-08-fix-sql-node-hydration.md` and
+`docs/superpowers/plans/2026-07-08-unified-function-node-hydration.md`).
+
+**Symptom:** a function defined directly inside an `__init__.py` file gets a **different
+qualname** — and therefore a different node `id` — depending on which extractor discovers
+it: `src/cc/extract/calls.py`'s `_module_qualname` strips a trailing `.__init__` from the
+module path (`pkg/__init__.py` → `pkg`, matching Python's real import semantics and
+griffe's own `canonical_path`); `src/cc/extract/sql.py`'s and
+`src/cc/extract/endpoints.py`'s own `_module_qualname` helpers do **not** (`pkg/__init__.py`
+→ `pkg.__init__`).
+
+**Why it doesn't crash today:** `graph/build.py`'s node-identity assertion (added by the
+SQL-hydration-bugfix plan) only fires when two extractors register the **same** id with
+conflicting `file`/`line`/`hash`. Two *different* ids for the same real function never
+collide in the merge dict, so the assertion can't catch this — the practical effect is a
+silent duplicate/orphan node (e.g. a DB-touching function defined in an `__init__.py`
+would show up as `function:pkg.__init__.foo` from `sql.py` but `function:pkg.foo` from
+`calls.py`, if it's also called from elsewhere), not a crash.
+
+**Why it's deferred, not fixed:** confirmed during the SQL-hydration-bugfix plan's review
+(`.superpowers/sdd/progress.md`, "SQL function-node hydration bugfix" section) as real but
+explicitly out of scope for that plan (which targeted the call-site-vs-def-line hash bug
+specifically). No test fixture currently defines a DB-touching function, a called function,
+or a route handler directly inside an `__init__.py` — every fixture's `__init__.py` is
+empty — so nothing today silently exercises or normalizes the wrong behavior.
+
+**What fixing it would take:** unify all three `_module_qualname` implementations into one
+shared helper (matching `calls.py`'s existing `__init__`-stripping behavior, which already
+matches griffe's own `canonical_path` convention) — analogous to how the four
+function-node-hydration call sites were unified onto `src/cc/extract/_node_hydration.py`.
