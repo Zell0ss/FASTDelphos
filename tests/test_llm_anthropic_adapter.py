@@ -13,6 +13,7 @@ def _config(**overrides) -> LLMConfig:
         model="claude-haiku-4-5",
         max_tokens=500,
         extra_instructions=None,
+        orchestrator_threshold=2,
     )
     defaults.update(overrides)
     return LLMConfig(**defaults)

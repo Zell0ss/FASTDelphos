@@ -155,3 +155,30 @@ def test_production_path_env_vars_win_over_dotenv_file(monkeypatch, tmp_path):
 
     # Assert: unused .env vars are still read (not shadowed by env vars)
     assert config.extra_instructions == "from-file"
+
+
+def test_orchestrator_threshold_defaults_to_two():
+    config = load_config({"CC_LLM_PROVIDER": "anthropic", "CC_LLM_API_KEY": "k"})
+    assert config.orchestrator_threshold == 2
+
+
+def test_orchestrator_threshold_reads_from_env():
+    config = load_config(
+        {
+            "CC_LLM_PROVIDER": "anthropic",
+            "CC_LLM_API_KEY": "k",
+            "CC_LLM_ORCHESTRATOR_THRESHOLD": "3",
+        }
+    )
+    assert config.orchestrator_threshold == 3
+
+
+def test_orchestrator_threshold_must_be_a_positive_integer():
+    with pytest.raises(LLMConfigError, match="CC_LLM_ORCHESTRATOR_THRESHOLD"):
+        load_config(
+            {
+                "CC_LLM_PROVIDER": "anthropic",
+                "CC_LLM_API_KEY": "k",
+                "CC_LLM_ORCHESTRATOR_THRESHOLD": "0",
+            }
+        )

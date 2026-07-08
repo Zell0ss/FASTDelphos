@@ -6,6 +6,7 @@ from dotenv import dotenv_values
 _VALID_PROVIDERS = {"anthropic", "openai_compatible"}
 _DEFAULT_MODEL = "claude-haiku-4-5"
 _DEFAULT_MAX_TOKENS = 500
+_DEFAULT_ORCHESTRATOR_THRESHOLD = 2
 
 
 class LLMConfigError(Exception):
@@ -20,6 +21,7 @@ class LLMConfig:
     model: str
     max_tokens: int
     extra_instructions: str | None
+    orchestrator_threshold: int
 
 
 def _read_env(env: dict[str, str] | None) -> dict[str, str]:
@@ -78,6 +80,17 @@ def load_config(env: dict[str, str] | None = None) -> LLMConfig:
         if max_tokens <= 0:
             raise LLMConfigError("CC_LLM_MAX_TOKENS must be a positive integer")
 
+    raw_threshold = values.get("CC_LLM_ORCHESTRATOR_THRESHOLD", "").strip()
+    if not raw_threshold:
+        orchestrator_threshold = _DEFAULT_ORCHESTRATOR_THRESHOLD
+    else:
+        try:
+            orchestrator_threshold = int(raw_threshold)
+        except ValueError as exc:
+            raise LLMConfigError("CC_LLM_ORCHESTRATOR_THRESHOLD must be an integer") from exc
+        if orchestrator_threshold <= 0:
+            raise LLMConfigError("CC_LLM_ORCHESTRATOR_THRESHOLD must be a positive integer")
+
     base_url = values.get("CC_LLM_BASE_URL", "").strip() or None
     extra_instructions = values.get("CC_LLM_EXTRA_INSTRUCTIONS", "").strip() or None
 
@@ -88,4 +101,5 @@ def load_config(env: dict[str, str] | None = None) -> LLMConfig:
         model=model,
         max_tokens=max_tokens,
         extra_instructions=extra_instructions,
+        orchestrator_threshold=orchestrator_threshold,
     )
