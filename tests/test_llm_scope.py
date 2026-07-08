@@ -75,3 +75,37 @@ def test_threshold_is_configurable_not_hardcoded():
     }
     assert "function:a" in select_annotation_targets(graph, threshold=1)
     assert "function:a" not in select_annotation_targets(graph, threshold=2)
+
+
+def test_same_table_read_and_write_counts_as_one_table():
+    """Spec §5: a function reading and writing the SAME table counts as 1, not 2.
+    This function touches only 1 distinct table (even though it reads AND writes to it),
+    so with threshold=2 it should NOT be selected."""
+    graph = {
+        "nodes": [
+            _node("function:cache_sync", "function"),
+            _node("table:cache", "table"),
+        ],
+        "edges": [
+            _edge("function:cache_sync", "table:cache", "reads"),
+            _edge("function:cache_sync", "table:cache", "writes"),
+        ],
+    }
+    targets = select_annotation_targets(graph, threshold=2)
+    assert "function:cache_sync" not in targets
+
+
+def test_same_table_read_and_write_selected_with_threshold_one():
+    """Inverse case: same function with threshold=1 is selected (1 table >= 1)."""
+    graph = {
+        "nodes": [
+            _node("function:cache_sync", "function"),
+            _node("table:cache", "table"),
+        ],
+        "edges": [
+            _edge("function:cache_sync", "table:cache", "reads"),
+            _edge("function:cache_sync", "table:cache", "writes"),
+        ],
+    }
+    targets = select_annotation_targets(graph, threshold=1)
+    assert "function:cache_sync" in targets
