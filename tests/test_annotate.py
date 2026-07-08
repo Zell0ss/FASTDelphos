@@ -122,6 +122,49 @@ def test_failing_node_is_reported_and_does_not_raise(tmp_path):
     ) == {}
 
 
+def test_node_with_unreadable_file_is_reported_and_does_not_abort_batch(tmp_path):
+    """Regression: table/model nodes can have file="unknown" (no CREATE TABLE
+    found in source, see extract/sql.py). get_source_span() then raises
+    FileNotFoundError (an OSError subclass), which used to propagate past the
+    narrow `except (LLMGenerationError, ValueError)` and crash the whole
+    --all batch instead of just marking that one node as failed."""
+    graph = {
+        "nodes": [
+            {
+                "id": "table:profiles",
+                "type": "table",
+                "file": "unknown",
+                "line": 1,
+                "hash": "hash-table",
+                "inferred": False,
+                "props": {"name": "profiles"},
+            },
+            {
+                "id": "endpoint:GET:/x",
+                "type": "endpoint",
+                "file": str(tmp_path / "src.py"),
+                "line": 1,
+                "hash": "hash-a",
+                "inferred": False,
+                "props": {"method": "GET", "path": "/x", "handler": "mod.handler"},
+            },
+        ],
+        "edges": [],
+        "gaps": [],
+        "exclusions": [],
+    }
+    (tmp_path / "src.py").write_text("def handler():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
+
+    client = FakeLLMClient()
+    report = run_annotate(tmp_path, client, model_name="m", all_nodes=True)
+
+    assert "table:profiles" in report["failed_ids"]
+    assert report["failed"] == 1
+    assert report["generated"] == 1
+    assert len(client.calls) == 1
+
+
 def test_notes_json_records_model_and_prompt_version(tmp_path):
     _write_graph(tmp_path)
     client = FakeLLMClient()

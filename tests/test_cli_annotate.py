@@ -48,3 +48,32 @@ def test_annotate_reports_unimplemented_provider(tmp_path, monkeypatch, capsys):
 
     captured = capsys.readouterr()
     assert "not implemented yet" in captured.out
+
+
+def test_annotate_missing_graph_json_prints_clear_message(tmp_path, monkeypatch, capsys):
+    # tmp_path deliberately has no graph.json — e.g. `cc annotate` pointed at
+    # the wrong directory, or one where `cc compile` was never run.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CC_LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("CC_LLM_API_KEY", "k")
+    monkeypatch.setattr("sys.argv", ["cc", "annotate", str(tmp_path)])
+
+    main()  # must not raise
+
+    captured = capsys.readouterr()
+    assert "graph.json" in captured.out
+    assert "cc compile" in captured.out
+
+
+def test_annotate_malformed_graph_json_prints_clear_message(tmp_path, monkeypatch, capsys):
+    (tmp_path / "graph.json").write_text("{not valid json", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CC_LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("CC_LLM_API_KEY", "k")
+    monkeypatch.setattr("sys.argv", ["cc", "annotate", str(tmp_path)])
+
+    main()  # must not raise
+
+    captured = capsys.readouterr()
+    assert "graph.json" in captured.out
+    assert "no es JSON válido" in captured.out

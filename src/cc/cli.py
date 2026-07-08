@@ -1,4 +1,5 @@
 import argparse
+import json
 import pathlib
 
 from cc.annotate import run_annotate
@@ -115,16 +116,23 @@ def main() -> None:
             print(f"Provider {config.provider!r} is not implemented yet.")
             return
 
-        report = run_annotate(
-            args.out,
-            client,
-            model_name=config.model,
-            extra_instructions=config.extra_instructions,
-            node_id=args.node,
-            all_nodes=args.all,
-            force=args.force,
-            threshold=config.orchestrator_threshold,
-        )
+        try:
+            report = run_annotate(
+                args.out,
+                client,
+                model_name=config.model,
+                extra_instructions=config.extra_instructions,
+                node_id=args.node,
+                all_nodes=args.all,
+                force=args.force,
+                threshold=config.orchestrator_threshold,
+            )
+        except FileNotFoundError:
+            print(f"No se encontró graph.json en {args.out} — ¿has ejecutado `cc compile` primero?")
+            return
+        except json.JSONDecodeError:
+            print(f"graph.json en {args.out} no es JSON válido.")
+            return
         print(
             f"Generadas: {report['generated']}, Cacheadas: {report['cached']}, "
             f"Falladas: {report['failed']}"

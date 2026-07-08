@@ -54,7 +54,7 @@ def run_annotate(
             system = build_system_prompt(extra_instructions)
             user = build_user_prompt(source_span, neighborhood_text)
             text = client.generate(system, user)
-        except (LLMGenerationError, ValueError):
+        except (LLMGenerationError, ValueError, OSError, SyntaxError):
             report["failed"] += 1
             report["failed_ids"].append(tid)
             continue
