@@ -10,7 +10,7 @@ from cc.extract._calls_resolver import (
     local_assignment_targets,
 )
 from cc.extract._collect import collect_py_files
-from cc.graph.hash_util import node_hash
+from cc.extract._node_hydration import hydrate_function_node, node_from_ast_def
 from cc.graph.schema import Edge, Node
 
 
@@ -52,6 +52,7 @@ def extract_calls(
     repo_path: str | pathlib.Path,
     exclude_patterns: tuple[str, ...] = (),
     inventory: "SymbolInventory | None" = None,
+    ast_cache: dict[str, ast.Module | None] | None = None,
 ) -> tuple[list[Node], list[Edge], list[tuple[str, str]], dict]:
     """Return (function nodes, call edges, [(excluded_file, error_msg)], coverage).
 
@@ -66,6 +67,9 @@ def extract_calls(
 
     if inventory is None:
         inventory = build_symbol_inventory(repo_path, exclude_patterns)
+
+    if ast_cache is None:
+        ast_cache = {}
 
     nodes: dict[str, Node] = {}
     edges: list[Edge] = []
@@ -113,23 +117,11 @@ def extract_calls(
             counts["functions"] += 1
 
             caller_id = f"function:{fn_qualname}"
-            end_lineno = fn_node.end_lineno or fn_node.lineno
-            nodes.setdefault(
-                caller_id,
-                Node(
-                    id=caller_id,
-                    type="function",
-                    file=str(file),
-                    line=fn_node.lineno,
-                    hash=node_hash(file, fn_node.lineno, end_lineno),
-                    inferred=False,
-                    props={
-                        "qualname": fn_qualname,
-                        "kind": "method" if class_stack else "function",
-                        "is_handler": False,
-                    },
-                ),
-            )
+            caller_kind = "method" if class_stack else "function"
+            caller_node = hydrate_function_node(fn_qualname, inventory, ast_cache)
+            if caller_node is None:
+                caller_node = node_from_ast_def(fn_node, str(file), fn_qualname, caller_kind)
+            nodes.setdefault(caller_id, caller_node)
 
             for call in ast.walk(fn_node):
                 if not isinstance(call, ast.Call):
@@ -147,33 +139,16 @@ def extract_calls(
                     callee_qname = resolution.qualname
                     if callee_qname == fn_qualname:
                         continue  # no self-loops
-                    callee_info = inventory.functions[callee_qname]
-                    if callee_info.file == "unknown":
+                    callee_node = hydrate_function_node(callee_qname, inventory, ast_cache)
+                    if callee_node is None:
                         # griffe couldn't locate this symbol's source (namespace
                         # package, compiled stub, ...) — we can't hydrate a real
-                        # Node for it. Skip rather than crash node_hash; the call
-                        # was still structurally resolved, so it stays counted
+                        # Node for it. Skip rather than crash; the call was
+                        # still structurally resolved, so it stays counted
                         # above, it just can't be rendered as an edge.
                         continue
                     callee_id = f"function:{callee_qname}"
-                    nodes.setdefault(
-                        callee_id,
-                        Node(
-                            id=callee_id,
-                            type="function",
-                            file=callee_info.file,
-                            line=callee_info.lineno,
-                            hash=node_hash(
-                                callee_info.file, callee_info.lineno, callee_info.endlineno
-                            ),
-                            inferred=False,
-                            props={
-                                "qualname": callee_qname,
-                                "kind": callee_info.kind,
-                                "is_handler": False,
-                            },
-                        ),
-                    )
+                    nodes.setdefault(callee_id, callee_node)
                     key = (caller_id, callee_id)
                     if key not in seen_edges:
                         seen_edges.add(key)

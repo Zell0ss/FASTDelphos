@@ -286,3 +286,57 @@ def test_extract_calls_without_inventory_arg_still_works():
     # Backward compatibility: existing 2-positional-arg call sites (no inventory).
     nodes, edges, excluded, coverage = extract_calls(CALLS_REPO)
     assert len(nodes) > 0
+
+
+def test_decorated_caller_gets_decorator_inclusive_hash(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "svc.py").write_text(
+        "def audit(fn):\n"
+        "    return fn\n"
+        "\n"
+        "\n"
+        "@audit\n"
+        "def do_work():\n"
+        "    return helper()\n"
+        "\n"
+        "\n"
+        "def helper():\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    nodes, edges, _, _ = extract_calls(repo)
+    fn_node = next(n for n in nodes if n.id == "function:backend.svc.do_work")
+    assert fn_node.line == 6  # the `def` line, not the decorator (5)
+    from cc.graph.hash_util import node_hash
+
+    assert fn_node.hash == node_hash(
+        repo / "backend" / "svc.py", 5, 7
+    )  # decorator (5) through end (7)
+
+
+def test_decorated_callee_gets_decorator_inclusive_hash(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "svc.py").write_text(
+        "def audit(fn):\n"
+        "    return fn\n"
+        "\n"
+        "\n"
+        "def caller():\n"
+        "    return callee()\n"
+        "\n"
+        "\n"
+        "@audit\n"
+        "def callee():\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    nodes, edges, _, _ = extract_calls(repo)
+    fn_node = next(n for n in nodes if n.id == "function:backend.svc.callee")
+    assert fn_node.line == 10  # the `def` line, not the decorator (9)
+    from cc.graph.hash_util import node_hash
+
+    assert fn_node.hash == node_hash(repo / "backend" / "svc.py", 9, 11)
