@@ -243,7 +243,11 @@ def test_decorated_function_that_is_caller_callee_and_table_toucher(tmp_path):
     )  # decorator (5) through end (10, the `return format_roster(rows)` line)
 
     edge_types = {(e["from_"], e["to"], e["type"]) for e in data["edges"]}
-    assert ("function:backend.db.run_turn", "function:backend.db.get_active_roster", "calls") in edge_types
+    assert (
+        "function:backend.db.run_turn",
+        "function:backend.db.get_active_roster",
+        "calls",
+    ) in edge_types
     assert (
         "function:backend.db.get_active_roster",
         "function:backend.db.format_roster",

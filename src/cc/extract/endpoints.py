@@ -120,7 +120,9 @@ def extract_endpoints(
                 ep_id = f"endpoint:{method.upper()}:{full_path}"
                 fn_id = f"function:{handler_qname}"
 
-                fn_node_obj = hydrate_function_node(handler_qname, inventory, ast_cache, is_handler=True)
+                fn_node_obj = hydrate_function_node(
+                    handler_qname, inventory, ast_cache, is_handler=True
+                )
                 if fn_node_obj is None:
                     fn_node_obj = node_from_ast_def(
                         fn_node, str(file), handler_qname, "function", is_handler=True
