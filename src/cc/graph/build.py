@@ -4,8 +4,17 @@ from cc.graph.schema import Edge, Graph, Node
 def build_graph(nodes: list[Node], edges: list[Edge]) -> Graph:
     seen: dict[str, Node] = {}
     for n in nodes:
-        if n.id not in seen:
-            seen[n.id] = n
+        if n.id in seen:
+            existing = seen[n.id]
+            if (existing.file, existing.line, existing.hash) != (n.file, n.line, n.hash):
+                raise ValueError(
+                    f"Conflicting node identity for id={n.id!r}: "
+                    f"first registered as file={existing.file!r} line={existing.line} "
+                    f"hash={existing.hash!r}, later registered as file={n.file!r} "
+                    f"line={n.line} hash={n.hash!r}"
+                )
+            continue
+        seen[n.id] = n
 
     node_ids = set(seen)
     valid_edges: list[Edge] = []
