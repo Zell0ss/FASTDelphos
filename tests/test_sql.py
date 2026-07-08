@@ -2,6 +2,9 @@ import ast
 import pathlib
 
 from cc.extract._calls_resolver import FuncInfo, SymbolInventory
+from cc.extract._node_hydration import (
+    node_from_ast_def,  # noqa: F401 (re-export sanity, used implicitly)
+)
 from cc.extract.sql import _find_enclosing_function, extract_sql
 from tests.conftest import SIMPLE_API
 
@@ -95,10 +98,10 @@ def test_fstring_dynamic_prefix_before_table_does_not_fabricate_edge(tmp_path):
         "db.py",
         (
             "async def insert_dynamic(cur, prefix, values):\n"
-            '    await cur.execute(\n'
+            "    await cur.execute(\n"
             '        f"INSERT INTO {prefix}channels (a, b) VALUES (%s, %s)",\n'
-            '        values,\n'
-            '    )\n'
+            "        values,\n"
+            "    )\n"
         ),
     )
     nodes, edges, dynamic_gaps = extract_sql(tmp_path)
@@ -151,20 +154,20 @@ def test_find_enclosing_function_returns_def_span():
     )
     tree = ast.parse(source)
     call_node = next(n for n in ast.walk(tree) if isinstance(n, ast.Call))
-    qname, start, end = _find_enclosing_function(call_node, tree, "db")
+    qname, def_node = _find_enclosing_function(call_node, tree, "db")
     assert qname == "db.get_message"
-    assert start == 1
-    assert end == 2
+    assert def_node is not None
+    assert def_node.lineno == 1
+    assert def_node.end_lineno == 2
 
 
 def test_find_enclosing_function_module_level_returns_none_span():
     source = "CUR.execute('SELECT 1')\n"
     tree = ast.parse(source)
     call_node = next(n for n in ast.walk(tree) if isinstance(n, ast.Call))
-    qname, start, end = _find_enclosing_function(call_node, tree, "db")
+    qname, def_node = _find_enclosing_function(call_node, tree, "db")
     assert qname == "db"
-    assert start is None
-    assert end is None
+    assert def_node is None
 
 
 def test_function_node_uses_def_line_from_inventory_not_call_site(tmp_path):
@@ -215,3 +218,45 @@ def test_extract_sql_without_inventory_arg_still_works():
     # Backward compatibility: existing 2-positional-arg call sites (no inventory).
     nodes, edges, gaps = extract_sql(SIMPLE_API)
     assert any(n.type == "table" for n in nodes)
+
+
+def test_decorated_db_function_gets_decorator_inclusive_hash(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "db.py").write_text(
+        "def audit(fn):\n"
+        "    return fn\n"
+        "\n"
+        "\n"
+        "@audit\n"
+        "async def create_message(conn, content):\n"
+        "    await conn.execute(\n"
+        "        'INSERT INTO messages (content) VALUES (%s)', (content,)\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+    nodes, _, _ = extract_sql(repo)
+    fn_node = next(n for n in nodes if n.id == "function:db.create_message")
+    # the `async def` line, not the decorator (5) or the execute() call (7)
+    assert fn_node.line == 6
+    from cc.graph.hash_util import node_hash
+
+    assert fn_node.hash == node_hash(repo / "db.py", 5, 9)  # decorator (5) through end (9)
+
+
+def test_sql_still_works_when_griffe_cannot_resolve_the_function(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "db.py").write_text(
+        "async def create_message(conn, content):\n"
+        "    await conn.execute(\n"
+        "        'INSERT INTO messages (content) VALUES (%s)', (content,)\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+    from cc.extract._calls_resolver import SymbolInventory
+
+    empty_inventory = SymbolInventory(functions={})
+    nodes, _, _ = extract_sql(repo, inventory=empty_inventory)
+    fn_node = next(n for n in nodes if n.id == "function:db.create_message")
+    assert fn_node.line == 1  # local AST fallback still finds the real def line
