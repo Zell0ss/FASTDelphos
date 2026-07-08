@@ -195,3 +195,62 @@ def test_pipeline_shares_ast_cache_across_all_three_extractors(tmp_path):
     run(repo, out)
     data = json.loads((out / "graph.json").read_text())
     assert any(n["type"] == "endpoint" for n in data["nodes"])
+
+
+def test_decorated_function_that_is_caller_callee_and_table_toucher(tmp_path):
+    # The exact case that surfaced this whole plan: a decorated function that
+    # is simultaneously (a) a caller, (b) a callee, and (c) a DB-toucher —
+    # exercised by all four function-node emitters at once. Before this
+    # plan, endpoints.py/calls.py's caller path (AST, decorator-excluded
+    # line) and sql.py/calls.py's callee path (griffe, decorator-inclusive
+    # line) disagreed on this function's identity, and graph/build.py's
+    # identity assertion turned that disagreement into a hard crash.
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "db.py").write_text(
+        "def audit(fn):\n"
+        "    return fn\n"
+        "\n"
+        "\n"
+        "@audit\n"
+        "async def get_active_roster(cur, channel_id):\n"
+        "    rows = await cur.execute(\n"
+        "        'SELECT * FROM channels WHERE id = %s', (channel_id,)\n"
+        "    )\n"
+        "    return format_roster(rows)\n"
+        "\n"
+        "\n"
+        "def format_roster(rows):\n"
+        "    return list(rows)\n"
+        "\n"
+        "\n"
+        "async def run_turn(cur, channel_id):\n"
+        "    return await get_active_roster(cur, channel_id)\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+    run(repo, out)  # must not raise — this is the crash this plan fixes
+
+    data = json.loads((out / "graph.json").read_text())
+    matches = [n for n in data["nodes"] if n["id"] == "function:backend.db.get_active_roster"]
+    assert len(matches) == 1  # exactly one node — no silent duplicate/conflict either
+    fn_node = matches[0]
+    assert fn_node["line"] == 6  # the `async def` line, not the decorator (5)
+
+    assert fn_node["hash"] == node_hash(
+        repo / "backend" / "db.py", 5, 10
+    )  # decorator (5) through end (10, the `return format_roster(rows)` line)
+
+    edge_types = {(e["from_"], e["to"], e["type"]) for e in data["edges"]}
+    assert ("function:backend.db.run_turn", "function:backend.db.get_active_roster", "calls") in edge_types
+    assert (
+        "function:backend.db.get_active_roster",
+        "function:backend.db.format_roster",
+        "calls",
+    ) in edge_types
+    assert (
+        "function:backend.db.get_active_roster",
+        "table:channels",
+        "reads",
+    ) in edge_types
