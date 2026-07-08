@@ -66,7 +66,7 @@ def _parse_cached(file: str, ast_cache: dict[str, ast.Module | None]) -> ast.Mod
     try:
         source = pathlib.Path(file).read_text(encoding="utf-8")
         tree = ast.parse(source, filename=file)
-    except (OSError, SyntaxError):
+    except (OSError, SyntaxError, UnicodeDecodeError):
         ast_cache[file] = None
         return None
     ast_cache[file] = tree

@@ -112,3 +112,22 @@ def test_hydrate_function_node_caches_the_parsed_ast_per_file(tmp_path):
     assert node_a is not None and node_a.line == 1
     assert node_b is not None and node_b.line == 5
     assert len(cache) == 1  # one file, parsed once, reused for both lookups
+
+
+def test_hydrate_function_node_returns_none_on_invalid_utf8(tmp_path):
+    f = tmp_path / "broken.py"
+    # Write file with invalid UTF-8 bytes (latin-1 encoded é character)
+    f.write_bytes(b"def broken():\n    x = '\xe9'\n")
+    inventory = SymbolInventory(
+        functions={
+            "broken.broken": FuncInfo(
+                qualname="broken.broken",
+                file=str(f),
+                lineno=1,
+                endlineno=2,
+                kind="function",
+            )
+        }
+    )
+    node = hydrate_function_node("broken.broken", inventory, {})
+    assert node is None  # gracefully returns None instead of raising UnicodeDecodeError
