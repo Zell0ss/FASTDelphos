@@ -1,6 +1,7 @@
 import argparse
 import pathlib
 
+from cc.annotate import run_annotate
 from cc.pipeline import run
 
 
@@ -44,6 +45,26 @@ def main() -> None:
         "e.g. --exclude 'backend/tests/**'. Repeatable.",
     )
 
+    ann = sub.add_parser("annotate", help="Generate LLM why-notes overlay for a compiled graph")
+    ann.add_argument(
+        "out",
+        type=pathlib.Path,
+        help="Path to a compiled output directory (from `cc compile --out`)",
+    )
+    ann.add_argument(
+        "--all",
+        action="store_true",
+        help="Annotate every node, not just the default role-based scope",
+    )
+    ann.add_argument(
+        "--node", metavar="NODE_ID", help="Annotate only this single node id (on-demand)"
+    )
+    ann.add_argument(
+        "--force",
+        action="store_true",
+        help="Regenerate even if hash and prompt_version already match",
+    )
+
     args = parser.parse_args()
 
     if args.cmd == "compile":
@@ -76,6 +97,40 @@ def main() -> None:
             from cc.serve import serve_directory
 
             serve_directory(args.out, args.port)
+
+    elif args.cmd == "annotate":
+        from cc.llm.config import LLMConfigError, load_config
+
+        try:
+            config = load_config()
+        except LLMConfigError as exc:
+            print(f"Config error: {exc}")
+            return
+
+        if config.provider == "anthropic":
+            from cc.llm.anthropic_adapter import AnthropicClient
+
+            client = AnthropicClient(config)
+        else:
+            print(f"Provider {config.provider!r} is not implemented yet.")
+            return
+
+        report = run_annotate(
+            args.out,
+            client,
+            model_name=config.model,
+            extra_instructions=config.extra_instructions,
+            node_id=args.node,
+            all_nodes=args.all,
+            force=args.force,
+            threshold=config.orchestrator_threshold,
+        )
+        print(
+            f"Generadas: {report['generated']}, Cacheadas: {report['cached']}, "
+            f"Falladas: {report['failed']}"
+        )
+        if report["failed_ids"]:
+            print("Nodos fallados:", ", ".join(report["failed_ids"]))
 
 
 if __name__ == "__main__":
