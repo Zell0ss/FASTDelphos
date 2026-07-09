@@ -696,6 +696,26 @@ def test_build_symbol_inventory_excludes_gitignored_files(tmp_path):
     assert "backend.generated.drop" not in inv.functions
 
 
+def test_build_symbol_inventory_excludes_file_in_namespace_package(tmp_path):
+    # Regression for the 5137de4 guard in _walk_griffe_functions: griffe
+    # represents a namespace package's own Module.filepath as a list[Path]
+    # (one per search root), not a plain Path, so the exclusion check must
+    # not crash (`filepath in excluded` with excluded: set[Path]) at that
+    # directory-representing node — while a real file-backed module inside
+    # the same namespace package still gets a plain Path and must still be
+    # excludable via exclude_patterns.
+    repo = tmp_path / "repo"
+    _write(repo, "api/keep.py", "def kept():\n    pass\n")
+    _write(repo, "api/excluded.py", "def not_kept():\n    pass\n")
+
+    inv = build_symbol_inventory(repo, exclude_patterns=("api/excluded.py",))
+
+    assert "api.keep.kept" in inv.functions
+    assert "api.excluded.not_kept" not in inv.functions
+    assert not inv.load_failures
+    assert "api" in inv.top_level_packages
+
+
 def test_build_symbol_inventory_no_patterns_unaffected(tmp_path):
     repo = tmp_path / "repo"
     _write(repo, "backend/__init__.py", "")
