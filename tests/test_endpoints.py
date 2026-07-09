@@ -18,8 +18,8 @@ def test_endpoint_methods_and_paths():
 def test_endpoint_ids_are_stable():
     nodes, _ = extract_endpoints(SIMPLE_API)
     ep_ids = {n.id for n in nodes if n.type == "endpoint"}
-    assert "endpoint:POST:/messages/" in ep_ids
-    assert "endpoint:GET:/messages/{msg_id}" in ep_ids
+    assert "endpoint:POST:/messages/:main.create_message" in ep_ids
+    assert "endpoint:GET:/messages/{msg_id}:main.get_message" in ep_ids
 
 
 def test_handles_edges_link_endpoint_to_handler():

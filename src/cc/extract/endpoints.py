@@ -117,7 +117,7 @@ def extract_endpoints(
                 full_path = i_prefix + r_prefix + path_suffix
 
                 handler_qname = f"{module_qname}.{fn_node.name}"
-                ep_id = f"endpoint:{method.upper()}:{full_path}"
+                ep_id = f"endpoint:{method.upper()}:{full_path}:{handler_qname}"
                 fn_id = f"function:{handler_qname}"
 
                 fn_node_obj = hydrate_function_node(

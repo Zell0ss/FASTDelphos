@@ -21,6 +21,7 @@ Campos comunes a todo nodo: `id`, `type`, `file`, `line`, `hash`.
 - `id` — identidad **estable**, derivada de qualname + path (p.ej. `function:agora.services.synthesis.build_context`). No cambia al editar el cuerpo.
 - `hash` — huella de **contenido** del tramo de fuente. Cambia al editar. Gate de la Capa 3 futura.
 - `line` (nodos `function`/`endpoint`) — línea del propio `def`/`async def`, sin decoradores (para que "ir al nodo" aterrice en la definición). `hash` cubre el tramo **con decoradores incluidos** — un decorador es parte del significado de la pieza (`@router.post(...)`, un decorador de caché/auth), así que editarlo cuenta como edición del nodo. Un único punto de hidratación (`src/cc/extract/_node_hydration.py`) aplica esta convención para los cuatro emisores de nodos `function` (endpoints, calls-caller, calls-callee, sql) — ningún extractor calcula su propio `line`/`hash` de forma independiente.
+- **Excepción de `id` para `endpoint`:** dos handlers distintos pueden declarar el mismo `method`+`path` (routers registrados desde namespaces distintos) — el qualname del handler entra en el `id` (`endpoint:{METHOD}:{path}:{handler_qualname}`) para que la identidad sea inequívoca incluso en ese caso. La ambigüedad de ruta en sí (dos handlers "compitiendo" por el mismo `method`+`path` aparente) se reporta como gap `unresolved_dynamic` — ver Huecos.
 
 | type | Props específicas |
 |---|---|
