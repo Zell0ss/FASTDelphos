@@ -101,10 +101,14 @@ def gitignore_excluded_files(
 
 
 def excluded_files(
-    repo_path: pathlib.Path, exclude_patterns: tuple[str, ...] = ()
+    repo_path: pathlib.Path,
+    exclude_patterns: tuple[str, ...] = (),
+    use_gitignore: bool = True,
 ) -> set[pathlib.Path]:
     """Expand each glob pattern (relative to repo_path) and return the union of
-    .py files any pattern matches (absolute paths).
+    .py files any pattern matches, plus every .py file matched by the repo's
+    own .gitignore rules (unless use_gitignore=False) — one single exclusion
+    set regardless of origin.
 
     Shared by collect_py_files (subtracts this set from the file list) and the
     griffe-backed extractors in models.py / _calls_resolver.py (prune the same
@@ -115,26 +119,39 @@ def excluded_files(
     excluded: set[pathlib.Path] = set()
     for pattern in sorted(exclude_patterns):
         excluded.update(_glob_py_files(repo_path, pattern))
+    excluded.update(gitignore_excluded_files(repo_path, use_gitignore))
     return excluded
 
 
-def exclusion_report(repo_path: pathlib.Path, exclude_patterns: tuple[str, ...] = ()) -> list[dict]:
-    """[{"pattern": str, "count": int}, ...] sorted by pattern — how many .py
-    files each individual --exclude pattern matched, for the coverage report
-    and the compiled graph's metadata."""
+def exclusion_report(
+    repo_path: pathlib.Path,
+    exclude_patterns: tuple[str, ...] = (),
+    use_gitignore: bool = True,
+) -> list[dict]:
+    """[{"pattern": str, "count": int}, ...] — how many .py files each
+    --exclude pattern matched, sorted by pattern, plus one aggregate
+    "(.gitignore)" entry (only present when it matched at least one file) —
+    for the coverage report and the compiled graph's metadata. Declared by
+    origin, never silent."""
     report = []
     for pattern in sorted(exclude_patterns):
         count = len(_glob_py_files(repo_path, pattern))
         report.append({"pattern": pattern, "count": count})
+    gitignore_count = len(gitignore_excluded_files(repo_path, use_gitignore))
+    if gitignore_count:
+        report.append({"pattern": "(.gitignore)", "count": gitignore_count})
     return report
 
 
 def collect_py_files(
-    repo_path: pathlib.Path, exclude_patterns: tuple[str, ...] = ()
+    repo_path: pathlib.Path,
+    exclude_patterns: tuple[str, ...] = (),
+    use_gitignore: bool = True,
 ) -> list[pathlib.Path]:
     """Return all .py files under repo_path, excluding non-source directories
-    and anything matched by exclude_patterns (glob, relative to repo_path)."""
-    excluded = excluded_files(repo_path, exclude_patterns)
+    and anything matched by exclude_patterns (glob, relative to repo_path) or
+    by the repo's own .gitignore (unless use_gitignore=False)."""
+    excluded = excluded_files(repo_path, exclude_patterns, use_gitignore)
     return sorted(
         f
         for f in repo_path.rglob("*.py")

@@ -128,3 +128,42 @@ def test_gitignore_excluded_files_is_deterministic_across_calls(tmp_path):
     first = gitignore_excluded_files(tmp_path)
     second = gitignore_excluded_files(tmp_path)
     assert first == second
+
+
+def test_collect_py_files_excludes_gitignored_files_by_default(tmp_path):
+    _write(tmp_path, "app.py", "x = 1\n")
+    _write(tmp_path, ".gitignore", "generated.py\n")
+    _write(tmp_path, "generated.py", "x = 1\n")
+    files = collect_py_files(tmp_path)
+    assert files == [tmp_path / "app.py"]
+
+
+def test_collect_py_files_no_gitignore_flag_disables_gitignore_filtering(tmp_path):
+    _write(tmp_path, "app.py", "x = 1\n")
+    _write(tmp_path, ".gitignore", "generated.py\n")
+    _write(tmp_path, "generated.py", "x = 1\n")
+    files = collect_py_files(tmp_path, use_gitignore=False)
+    assert files == [tmp_path / "app.py", tmp_path / "generated.py"]
+
+
+def test_exclusion_report_adds_gitignore_origin_entry(tmp_path):
+    _write(tmp_path, ".gitignore", "generated.py\n")
+    _write(tmp_path, "generated.py", "x = 1\n")
+    _write(tmp_path, "backend/tests/a.py", "")
+    report = exclusion_report(tmp_path, ("backend/tests/**",))
+    assert {"pattern": "backend/tests/**", "count": 1} in report
+    assert {"pattern": "(.gitignore)", "count": 1} in report
+
+
+def test_exclusion_report_no_gitignore_entry_when_repo_has_no_gitignore(tmp_path):
+    _write(tmp_path, "backend/tests/a.py", "")
+    report = exclusion_report(tmp_path, ("backend/tests/**",))
+    assert report == [{"pattern": "backend/tests/**", "count": 1}]
+
+
+def test_excluded_files_unions_exclude_patterns_and_gitignore(tmp_path):
+    _write(tmp_path, ".gitignore", "generated.py\n")
+    _write(tmp_path, "generated.py", "x = 1\n")
+    _write(tmp_path, "backend/tests/a.py", "")
+    excluded = excluded_files(tmp_path, ("backend/tests/**",))
+    assert excluded == {tmp_path / "generated.py", tmp_path / "backend" / "tests" / "a.py"}
