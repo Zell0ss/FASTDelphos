@@ -51,6 +51,14 @@ def main() -> None:
         help="Do not respect the target repo's own .gitignore (root + nested). "
         "By default, gitignored files are excluded just like --exclude patterns.",
     )
+    comp.add_argument(
+        "--toppackages",
+        metavar="PKG,PKG,...",
+        help="Comma-separated override for the repo's own top-level package "
+        "names, used to classify calls as internal vs. external. Use for "
+        "repos where auto-detection still gets it wrong. A warning is "
+        "printed if this diverges from what auto-detection found.",
+    )
 
     ann = sub.add_parser("annotate", help="Generate LLM why-notes overlay for a compiled graph")
     ann.add_argument(
@@ -77,8 +85,19 @@ def main() -> None:
     if args.cmd == "compile":
         exclude_patterns = tuple(args.exclude or ())
         use_gitignore = not args.no_gitignore
+        top_packages_override = (
+            frozenset(p.strip() for p in args.toppackages.split(",") if p.strip())
+            if args.toppackages
+            else None
+        )
         print(f"Compiling {args.repo} → {args.out} …")
-        run(args.repo, args.out, exclude_patterns=exclude_patterns, use_gitignore=use_gitignore)
+        run(
+            args.repo,
+            args.out,
+            exclude_patterns=exclude_patterns,
+            use_gitignore=use_gitignore,
+            top_packages_override=top_packages_override,
+        )
         print(f"Done. Open {args.out}/index.html")
         if args.oracle:
             import sys

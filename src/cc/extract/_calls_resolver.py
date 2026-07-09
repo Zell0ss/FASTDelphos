@@ -88,6 +88,7 @@ def build_symbol_inventory(
     repo_path: str | pathlib.Path,
     exclude_patterns: tuple[str, ...] = (),
     use_gitignore: bool = True,
+    override_top_levels: frozenset[str] | None = None,
 ) -> SymbolInventory:
     """Discover the repo's own top-level packages/modules and load every one
     of them via griffe, collecting every function/method qualname, class
@@ -109,6 +110,12 @@ def build_symbol_inventory(
     internal calls resolved: every call into its namespace-package root
     fell through to "external, with positive evidence" for lack of any
     top-level name to check it against.
+
+    `override_top_levels`, when given, is an escape hatch for repos where
+    auto-detection still gets it wrong — it replaces the detected
+    `top_level_packages` outright. If it disagrees with what was detected,
+    a warning is printed showing both sets, so the mismatch is never
+    silent even though the override wins.
     """
     repo_path = pathlib.Path(repo_path)
     excluded = excluded_files(repo_path, exclude_patterns, use_gitignore)
@@ -147,6 +154,15 @@ def build_symbol_inventory(
     if not found_any and (repo_path / "__init__.py").exists():
         inv.top_level_packages.add(repo_path.name)
         _try_load(repo_path.name, [repo_path.parent], repo_path)
+
+    if override_top_levels is not None:
+        detected = frozenset(inv.top_level_packages)
+        if detected != frozenset(override_top_levels):
+            print(
+                "  ⚠ --toppackages diverges from auto-detection: "
+                f"override={sorted(override_top_levels)}, detected={sorted(detected)}"
+            )
+        inv.top_level_packages = set(override_top_levels)
 
     return inv
 

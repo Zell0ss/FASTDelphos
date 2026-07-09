@@ -118,12 +118,42 @@ def test_namespace_package_without_init_is_discovered_and_internal(tmp_path):
     assert not inv.load_failures
 
 
+def test_override_top_levels_replaces_detected_set(tmp_path):
+    repo = _make_repo(tmp_path)
+    inv = build_symbol_inventory(repo, override_top_levels=frozenset({"services"}))
+    assert inv.top_level_packages == {"services"}
+
+
+def test_override_top_levels_warns_on_divergence(tmp_path, capsys):
+    repo = _make_repo(tmp_path)
+    build_symbol_inventory(repo, override_top_levels=frozenset({"totally_different"}))
+    captured = capsys.readouterr()
+    assert "diverges from auto-detection" in captured.out
+    assert "totally_different" in captured.out
+    assert "services" in captured.out
+
+
+def test_override_top_levels_no_warning_when_matching(tmp_path, capsys):
+    repo = _make_repo(tmp_path)
+    build_symbol_inventory(repo, override_top_levels=frozenset({"services"}))
+    captured = capsys.readouterr()
+    assert "diverges" not in captured.out
+
+
+def test_override_top_levels_affects_classification(tmp_path):
+    repo = _make_repo(tmp_path)
+    inv = build_symbol_inventory(repo, override_top_levels=frozenset({"mystery"}))
+    resolution = _classify_qualname("mystery.something", inv)
+    assert resolution.kind == "dynamic"
+
+
 import ast
 
 from cc.extract._calls_resolver import (
     FuncInfo,
     Resolution,
     SymbolInventory,
+    _classify_qualname,
     build_import_table,
     classify_call,
     flatten_attribute,

@@ -18,11 +18,14 @@ def run(
     out_dir: str | pathlib.Path,
     exclude_patterns: tuple[str, ...] = (),
     use_gitignore: bool = True,
+    top_packages_override: frozenset[str] | None = None,
 ) -> None:
     repo_path = pathlib.Path(repo_path)
     out_dir = pathlib.Path(out_dir)
 
-    inventory = build_symbol_inventory(repo_path, exclude_patterns, use_gitignore)
+    inventory = build_symbol_inventory(
+        repo_path, exclude_patterns, use_gitignore, override_top_levels=top_packages_override
+    )
     ast_cache: dict[str, ast.Module | None] = {}
 
     ep_nodes, ep_edges = extract_endpoints(
