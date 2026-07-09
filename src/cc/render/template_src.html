@@ -116,6 +116,19 @@
     .neighbor-line .via { font-size: 9px; color: #667; margin-left: 2px; }
     .panel-raw { margin-top: 8px; }
     #exclusions-info { font-size: 10px; color: #778; margin-bottom: 6px; }
+
+    .note-block {
+      margin: 6px 0 10px; padding: 8px 10px; border-radius: 4px;
+      background: #2a1f10; border-left: 3px solid #ff9900; font-size: 11px; line-height: 1.5;
+    }
+    .note-block.stale { opacity: 0.6; border-left-color: #dc3545; }
+    .note-label {
+      display: block; font-size: 9px; color: #ff9944; text-transform: uppercase;
+      letter-spacing: 0.5px; margin-bottom: 4px;
+    }
+    .note-warning { display: block; color: #ff8895; font-size: 10px; margin-top: 6px; }
+    .note-absent { font-size: 10px; color: #667; margin: 6px 0 10px; font-style: italic; }
+    .note-absent code { color: #8899bb; font-family: monospace; font-style: normal; }
   </style>
 </head>
 <body>
@@ -164,6 +177,21 @@
 
   <script>
     const GRAPH = __GRAPH_JSON__;
+
+    // ── Phase 2 notes overlay ────────────────────────────────────────────────
+    // Loaded via fetch, not embedded — keeps index.html byte-identical whether
+    // or not `cc annotate` has ever run, and means graph.json/notes.json stay
+    // physically separate files even in the rendered output (a compliance
+    // handoff can omit notes.json and the page still works, just without
+    // notes). Requires serving the output dir over HTTP (--serve, or any
+    // static file server) — opening index.html directly via file:// will not
+    // load notes (browsers block local fetch()), which degrades gracefully to
+    // "sin nota" everywhere, same as if notes.json didn't exist.
+    let NOTES = {};
+    fetch('notes.json')
+      .then(r => (r.ok ? r.json() : {}))
+      .then(n => { NOTES = n; })
+      .catch(() => {});
 
     // ── Constants ─────────────────────────────────────────────────────────────
     const EDGE_COLORS = {
@@ -281,7 +309,7 @@
         elems.push({
           data: {
             id: n.id, label: n.id.split(':').slice(1).join(':'), type: n.type,
-            inferred: n.inferred, file: n.file, line: n.line, ...n.props,
+            inferred: n.inferred, file: n.file, line: n.line, hash: n.hash, ...n.props,
           },
           classes: [n.inferred ? 'inferred' : '', id === rootId ? 'root-node' : ''].join(' ').trim(),
         });
@@ -459,6 +487,12 @@
 
     function short(id) { return id.split(':').slice(1).join(':'); }
 
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s == null ? '' : String(s);
+      return div.innerHTML;
+    }
+
     function renderProps(data) {
       if (data.type === 'endpoint') {
         return (
@@ -551,6 +585,25 @@
       return `<div class="neighbor-line"><b>Alcanzable desde:</b> ${links}${hubNote}</div>`;
     }
 
+    function renderNote(data) {
+      if (data.type !== 'function' && data.type !== 'endpoint') return '';
+      const note = NOTES[data.id];
+      if (!note) {
+        return `<div class="note-absent">sin nota — <code>cc annotate --node ${data.id}</code></div>`;
+      }
+      const stale = note.hash !== data.hash;
+      const warning = stale
+        ? '<span class="note-warning">⚠ desactualizada — el código cambió</span>'
+        : '';
+      return (
+        `<div class="note-block${stale ? ' stale' : ''}">` +
+        `<span class="note-label">inferred · ${escapeHtml(note.model)}</span>` +
+        `<div>${escapeHtml(note.text)}</div>` +
+        warning +
+        `</div>`
+      );
+    }
+
     function renderPanelBody(data) {
       const hubBadge = HUB_IDS.has(data.id)
         ? `<span class="hub-badge">⚠ hub — ${(edgesTo[data.id] || []).length} llamantes</span>`
@@ -562,6 +615,7 @@
 
       return (
         hubBadge +
+        renderNote(data) +
         `<label class="panel-toggle"><input type="checkbox" onchange="togglePanelRaw(this.checked)"> ver raw</label>` +
         `<label class="panel-toggle"><input type="checkbox" onchange="toggleHideNode('${data.id}', this.checked)"> ocultar este nodo</label>` +
         `<div class="panel-props">${renderProps(data)}</div>` +
