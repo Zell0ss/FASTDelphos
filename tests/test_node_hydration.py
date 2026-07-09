@@ -1,7 +1,8 @@
 import ast
+import warnings
 
 from cc.extract._calls_resolver import FuncInfo, SymbolInventory
-from cc.extract._node_hydration import hydrate_function_node, node_from_ast_def
+from cc.extract._node_hydration import hydrate_function_node, node_from_ast_def, parse_module_cached
 from cc.graph.hash_util import node_hash
 
 
@@ -131,3 +132,38 @@ def test_hydrate_function_node_returns_none_on_invalid_utf8(tmp_path):
     )
     node = hydrate_function_node("broken.broken", inventory, {})
     assert node is None  # gracefully returns None instead of raising UnicodeDecodeError
+
+
+def test_parse_module_cached_reuses_prior_successful_parse(tmp_path):
+    f = tmp_path / "mod.py"
+    f.write_text("def a():\n    pass\n", encoding="utf-8")
+    ast_cache: dict = {}
+    first = parse_module_cached(f, ast_cache)
+    second = parse_module_cached(f, ast_cache)
+    assert first is second  # identical object -> genuinely reused, not re-parsed
+
+
+def test_parse_module_cached_raises_syntax_error_uncached(tmp_path):
+    f = tmp_path / "broken.py"
+    f.write_text("def f(:\n", encoding="utf-8")
+    ast_cache: dict = {}
+    import pytest
+
+    with pytest.raises(SyntaxError):
+        parse_module_cached(f, ast_cache)
+    assert f not in ast_cache and str(f) not in ast_cache
+
+
+def test_parse_module_cached_suppresses_parse_warnings(tmp_path):
+    # An unescaped regex string (real illumiows case) triggers a warning at
+    # parse time — SyntaxWarning on Python 3.12+, DeprecationWarning on
+    # 3.11 (verified empirically: same underlying issue, different category
+    # depending on interpreter version). Suppress broadly rather than pin
+    # to one category, so this doesn't silently stop working on whichever
+    # Python actually runs the tool.
+    f = tmp_path / "regex.py"
+    f.write_text(r'import re' + "\n" + r"re.compile('\d+')" + "\n", encoding="utf-8")
+    ast_cache: dict = {}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        parse_module_cached(f, ast_cache)  # must not raise despite the invalid escape

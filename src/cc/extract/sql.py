@@ -8,7 +8,7 @@ import sqlglot.expressions as exp
 
 from cc.extract._calls_resolver import SymbolInventory, build_symbol_inventory
 from cc.extract._collect import collect_py_files
-from cc.extract._node_hydration import hydrate_function_node, node_from_ast_def
+from cc.extract._node_hydration import hydrate_function_node, node_from_ast_def, parse_module_cached
 from cc.graph.hash_util import node_hash
 from cc.graph.schema import Edge, Node
 
@@ -145,9 +145,8 @@ def extract_sql(
     dynamic_gaps: list[tuple[str, int, str]] = []
 
     for file in collect_py_files(repo_path, exclude_patterns, use_gitignore):
-        source = file.read_text(encoding="utf-8")
         try:
-            tree = ast.parse(source, filename=str(file))
+            tree = parse_module_cached(file, ast_cache)
         except SyntaxError:
             continue
 

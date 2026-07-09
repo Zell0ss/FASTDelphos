@@ -23,6 +23,7 @@ apart again.
 
 import ast
 import pathlib
+import warnings
 
 from cc.extract._calls_resolver import SymbolInventory
 from cc.graph.hash_util import node_hash
@@ -60,12 +61,49 @@ def node_from_ast_def(
     )
 
 
+def parse_module_cached(
+    file: pathlib.Path, ast_cache: dict[str, ast.Module | None]
+) -> ast.Module:
+    """Parse `file`, reusing a prior successful parse from `ast_cache` if present.
+
+    Used by the three main per-file driving loops (endpoints.py, calls.py,
+    sql.py), which previously each called `ast.parse` independently —
+    3 passes per file. They share this cache (and `_parse_cached`'s own
+    on-demand hydration lookups share it too, transparently, since both
+    key on the same `str(file)`).
+
+    Raises SyntaxError exactly like ast.parse — callers keep their own
+    try/except, since some (calls.py) need the actual exception message
+    for their own gap reporting. Only successful parses are cached; a file
+    that fails to parse is simply reparsed (and re-raises) on each pass —
+    rare in practice, and safer than caching a failure without its message.
+
+    Suppresses warnings raised while parsing (e.g. an unescaped regex
+    string — SyntaxWarning on Python 3.12+, DeprecationWarning on 3.11,
+    same underlying issue) — the target repo's own code quality is not
+    this tool's output to show off. Suppressed broadly, not pinned to one
+    category, so this doesn't depend on which Python version runs the tool.
+    """
+    key = str(file)
+    cached = ast_cache.get(key)
+    if cached is not None:
+        return cached
+    source = file.read_text(encoding="utf-8")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        tree = ast.parse(source, filename=key)
+    ast_cache[key] = tree
+    return tree
+
+
 def _parse_cached(file: str, ast_cache: dict[str, ast.Module | None]) -> ast.Module | None:
     if file in ast_cache:
         return ast_cache[file]
     try:
         source = pathlib.Path(file).read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=file)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            tree = ast.parse(source, filename=file)
     except (OSError, SyntaxError, UnicodeDecodeError):
         ast_cache[file] = None
         return None
