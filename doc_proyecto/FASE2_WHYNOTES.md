@@ -20,9 +20,9 @@ Dos adapters, seleccionables por config:
 | Provider | Cliente | Notas |
 |---|---|---|
 | `anthropic` | SDK `anthropic` oficial | Casa (Haiku). Usar prompt caching sobre el system prompt (mismo system para todos los nodos de un run → cache hit en todo menos el primero) |
-| `openai_compatible` | `httpx` contra `/v1/chat/completions` | BNP (Qwen Coder vía endpoint local) y cualquier proveedor futuro. NO usar el SDK de openai — una llamada REST no justifica la dependencia |
+| `openai_compatible` | `httpx` contra `/v1/chat/completions` | Corporate (Qwen Coder vía endpoint local) y cualquier proveedor futuro. NO usar el SDK de openai — una llamada REST no justifica la dependencia |
 
-**Sin LiteLLM ni capas universales** — decisión tomada: dependencias mínimas es requisito de instalabilidad en BNP.
+**Sin LiteLLM ni capas universales** — decisión tomada: dependencias mínimas es requisito de instalabilidad en Corporate.
 
 Errores: timeout y fallo de API por nodo → se registra, se salta el nodo, el run continúa (flag, no bloquees — una nota que falla no aborta el batch). Reporte final: generadas / cacheadas / falladas.
 
@@ -31,7 +31,7 @@ Errores: timeout y fallo de API por nodo → se registra, se salta el nodo, el r
 ```bash
 CC_LLM_PROVIDER=anthropic          # anthropic | openai_compatible
 CC_LLM_BASE_URL=                   # vacío para anthropic (default SDK); URL del endpoint para openai_compatible
-CC_LLM_API_KEY=sk-...              # o el token del gateway BNP
+CC_LLM_API_KEY=sk-...              # o el token del gateway Corporate
 CC_LLM_MODEL=claude-haiku-4-5
 CC_LLM_MAX_TOKENS=500              # una why-note es un párrafo, no un ensayo
 CC_LLM_EXTRA_INSTRUCTIONS=         # opcional: instrucciones extra por-proveedor (modelos pequeños necesitan prompts más rígidos)
@@ -121,7 +121,7 @@ Formato de salida: un párrafo, máx ~80 palabras, español. `CC_LLM_EXTRA_INSTR
 5. Nota desactualizada (hash drift sin re-annotate) se muestra como desactualizada.
 6. `cc compile` sin `.env` LLM: output byte-idéntico a Fase 1. `graph.json` byte-idéntico con o sin Fase 2.
 7. **Anti-paráfrasis validado por Josem:** muestreo de ~10 notas del batch de agora; una nota que re-narra el código cuenta como fallo. Mismo protocolo que el eval de Fase 1: la firma es humana.
-8. El mismo `notes.json` es regenerable contra el otro proveedor cambiando solo el `.env` (test manual casa→BNP cuando haya acceso).
+8. El mismo `notes.json` es regenerable contra el otro proveedor cambiando solo el `.env` (test manual casa→Corporate cuando haya acceso).
 
 ## Orden de construcción sugerido
 
@@ -129,4 +129,4 @@ Formato de salida: un párrafo, máx ~80 palabras, español. `CC_LLM_EXTRA_INSTR
 2. Overlay + gate + `cc annotate` batch con scope por rol.
 3. Prompt anti-paráfrasis + iteración contra agora real (aquí se quema el `PROMPT_VERSION` 1→2→3, es lo esperado).
 4. Render (bloque inferred + aviso de drift).
-5. Adapter `openai_compatible` — testeable en casa contra cualquier servidor local OpenAI-compatible antes de tocar BNP.
+5. Adapter `openai_compatible` — testeable en casa contra cualquier servidor local OpenAI-compatible antes de tocar Corporate.

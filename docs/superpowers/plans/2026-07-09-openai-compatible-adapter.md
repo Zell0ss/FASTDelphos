@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add the second `LLMClient` implementation — `OpenAICompatibleClient`, talking to any `/v1/chat/completions`-shaped REST endpoint via `httpx` — completing Phase 2's two-provider design (`anthropic` for home, `openai_compatible` for BNP's internal Qwen Coder gateway).
+**Goal:** Add the second `LLMClient` implementation — `OpenAICompatibleClient`, talking to any `/v1/chat/completions`-shaped REST endpoint via `httpx` — completing Phase 2's two-provider design (`anthropic` for home, `openai_compatible` for Corporate's internal Qwen Coder gateway).
 
 **Architecture:** `OpenAICompatibleClient` mirrors `AnthropicClient`'s exact shape (same `LLMClient` Protocol, same constructor-injection testability, same "wrap everything into `LLMGenerationError`, leak only the exception type name" security contract) but uses a plain `httpx.Client.post(...)` call instead of an SDK. `config.base_url` becomes required for this provider (there's no sane default endpoint to fall back to, unlike `anthropic`). Wired into `cli.py`'s existing provider dispatch as a second `elif` branch.
 
@@ -12,11 +12,11 @@
 
 - `httpx`, never the `openai` SDK — spec: "NO usar el SDK de openai — una llamada REST no justifica la dependencia."
 - `config.base_url` is the **full base URL including `/v1`** (e.g. `http://localhost:11434/v1` for a local Ollama server) — the client appends `/chat/completions` to it, never assumes a fixed suffix beyond that.
-- `config.api_key`, if set, is sent as `Authorization: Bearer <key>`. It is **optional** for this provider (unlike `anthropic`, where it's required) — many local OpenAI-compatible dev servers (Ollama, vLLM) don't require auth, and the spec explicitly wants this "testeable en casa contra cualquier servidor local OpenAI-compatible antes de tocar BNP."
+- `config.api_key`, if set, is sent as `Authorization: Bearer <key>`. It is **optional** for this provider (unlike `anthropic`, where it's required) — many local OpenAI-compatible dev servers (Ollama, vLLM) don't require auth, and the spec explicitly wants this "testeable en casa contra cualquier servidor local OpenAI-compatible antes de tocar Corporate."
 - `config.base_url` becomes **required** for this provider — `load_config()` must raise `LLMConfigError` if `CC_LLM_PROVIDER=openai_compatible` and `CC_LLM_BASE_URL` is empty, mirroring the existing `CC_LLM_API_KEY`-required-for-`anthropic` pattern.
 - Same security contract as `AnthropicClient` (`src/cc/llm/anthropic_adapter.py`): every failure (network, HTTP status, malformed JSON, missing response keys) is caught by one broad `except Exception` and re-raised as `LLMGenerationError(f"OpenAI-compatible generation failed: {type(exc).__name__}")` — **never** `str(exc)` verbatim (an `httpx.HTTPStatusError`'s default message can echo response body text that hasn't been vetted for secrets). Response-parsing (`response.json()["choices"][0]["message"]["content"]`) must be **inside** the `try` block — a prior task found and fixed exactly this bug for `AnthropicClient` (a malformed response leaking a raw `IndexError` instead of `LLMGenerationError`); don't repeat it here.
 - Tests use `httpx.MockTransport` (a real `httpx.Client` with a custom transport function returning canned `httpx.Response` objects) — never a hand-rolled fake for the HTTP layer, since `MockTransport` exercises real request/response serialization and matches this project's stated preference against mocking internal functions.
-- `scripts/openai_smoke_test.py` must **never** be executed by an agent/automated process in this environment — it is manual-only, for Josem to run against a real endpoint (locally first, then BNP's internal gateway) himself.
+- `scripts/openai_smoke_test.py` must **never** be executed by an agent/automated process in this environment — it is manual-only, for Josem to run against a real endpoint (locally first, then Corporate's internal gateway) himself.
 - Reuse the existing `LLMClient` Protocol (`src/cc/llm/client.py`) and `LLMGenerationError` — do not redefine either.
 
 ---
@@ -337,7 +337,7 @@ from cc.llm.config import LLMConfig
 
 class OpenAICompatibleClient:
     """LLMClient implementation for any OpenAI-compatible /v1/chat/completions
-    endpoint (BNP's internal Qwen Coder gateway, a local Ollama/vLLM server,
+    endpoint (Corporate's internal Qwen Coder gateway, a local Ollama/vLLM server,
     or any future provider exposing the same REST shape).
 
     `config.base_url` is the full base INCLUDING /v1 (e.g.
@@ -507,11 +507,11 @@ Run: `ruff check . && ruff format --check .` on the new/changed files (`src/cc/l
 
 ```bash
 git add src/cc/llm/openai_compatible_adapter.py src/cc/cli.py scripts/openai_smoke_test.py tests/test_llm_openai_compatible_adapter.py tests/test_cli_annotate.py
-git commit -m "feat: add openai_compatible LLM adapter (httpx-based, for BNP's Qwen Coder gateway)"
+git commit -m "feat: add openai_compatible LLM adapter (httpx-based, for Corporate's Qwen Coder gateway)"
 ```
 
 ---
 
 ## Manual Verification (outside the automated suite)
 
-Do **not** run `scripts/openai_smoke_test.py` in this environment under any circumstances — there is no reachable local OpenAI-compatible server here, and this environment has no route to BNP's internal network. This is explicitly Josem's own manual gate, same pattern as the `anthropic` adapter's Phase 2 Step 1 smoke test: he runs it himself, first against something local (e.g. Ollama) to sanity-check the adapter, then against BNP's real gateway once he's there.
+Do **not** run `scripts/openai_smoke_test.py` in this environment under any circumstances — there is no reachable local OpenAI-compatible server here, and this environment has no route to Corporate's internal network. This is explicitly Josem's own manual gate, same pattern as the `anthropic` adapter's Phase 2 Step 1 smoke test: he runs it himself, first against something local (e.g. Ollama) to sanity-check the adapter, then against Corporate's real gateway once he's there.

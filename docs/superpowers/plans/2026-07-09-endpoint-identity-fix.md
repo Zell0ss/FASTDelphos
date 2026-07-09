@@ -13,7 +13,7 @@
 - New endpoint `id` format: `endpoint:{METHOD}:{path}:{handler_qualname}` — exact, per spec §1a.
 - `graph/build.py`'s node-identity assertion (raises `ValueError` on conflicting `file`/`line`/`hash` for the same `id`) must NOT be modified — it was doing its job correctly; the bug was in the `id`, not the check.
 - Route ambiguity (two+ endpoint nodes sharing `(method, path)`) becomes a `kind="unresolved_dynamic"` gap, `severity={"comprehension": "warning", "compliance": "error"}` — flag, don't block, don't ask the dev to rewrite working code.
-- The regression fixture for this bug must be synthetic (two toy routers, same subpath, different namespaces) — never real BNP code.
+- The regression fixture for this bug must be synthetic (two toy routers, same subpath, different namespaces) — never real Corporate code.
 - Every existing endpoint `id` in every repo this tool compiles (including agora) changes shape. This is an accepted, un-migrated side effect — hub marks in `localStorage` keyed by old endpoint ids go stale; no migration is being built for that.
 
 ---
@@ -270,7 +270,7 @@ def test_two_routers_same_path_different_namespace_compiles_with_ambiguity_gap()
     # routers registered from different namespaces both declare
     # `GET /ecosystems/`. Before the endpoint-id fix (Task 1) this crashed
     # the whole compile via graph/build.py's identity assertion — same id,
-    # different file/line/hash. Synthetic fixture — never real BNP code.
+    # different file/line/hash. Synthetic fixture — never real Corporate code.
     with tempfile.TemporaryDirectory() as d:
         repo = pathlib.Path(d) / "repo"
         (repo / "team_a").mkdir(parents=True)
