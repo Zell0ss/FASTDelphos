@@ -64,6 +64,7 @@ def test_annotate_wires_openai_compatible_provider(tmp_path, monkeypatch, capsys
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CC_LLM_PROVIDER", "openai_compatible")
     monkeypatch.setenv("CC_LLM_BASE_URL", "http://localhost:1/v1")
+    monkeypatch.setenv("CC_LLM_MODEL", "qwen-coder")
     monkeypatch.setattr("sys.argv", ["cc", "annotate", str(tmp_path)])
 
     main()

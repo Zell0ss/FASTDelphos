@@ -96,6 +96,11 @@ def load_config(env: dict[str, str] | None = None) -> LLMConfig:
         raise LLMConfigError(
             "CC_LLM_BASE_URL is not set (required for provider=openai_compatible)"
         )
+    if provider == "openai_compatible" and not values.get("CC_LLM_MODEL", "").strip():
+        raise LLMConfigError(
+            "CC_LLM_MODEL is not set (required for provider=openai_compatible — "
+            "there's no cross-provider default model name)"
+        )
     extra_instructions = values.get("CC_LLM_EXTRA_INSTRUCTIONS", "").strip() or None
 
     return LLMConfig(

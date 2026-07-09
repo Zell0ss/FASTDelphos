@@ -44,6 +44,7 @@ def test_openai_compatible_provider_value_is_accepted_at_config_time():
             "CC_LLM_PROVIDER": "openai_compatible",
             "CC_LLM_API_KEY": "sk-test-key",
             "CC_LLM_BASE_URL": "http://localhost:8000/v1",
+            "CC_LLM_MODEL": "qwen-coder",
         }
     )
     assert config.provider == "openai_compatible"
@@ -193,13 +194,37 @@ def test_openai_compatible_requires_base_url():
         load_config({"CC_LLM_PROVIDER": "openai_compatible", "CC_LLM_API_KEY": ""})
 
 
-def test_openai_compatible_with_base_url_and_no_api_key_is_valid():
+def test_openai_compatible_requires_model():
+    # No cross-provider default model name — CC_LLM_MODEL defaulting to an
+    # Anthropic model name would silently break any other gateway.
+    with pytest.raises(LLMConfigError, match="CC_LLM_MODEL"):
+        load_config(
+            {
+                "CC_LLM_PROVIDER": "openai_compatible",
+                "CC_LLM_BASE_URL": "http://localhost:11434/v1",
+            }
+        )
+
+
+def test_openai_compatible_with_base_url_model_and_no_api_key_is_valid():
     # api_key is optional for this provider — many local dev servers don't need one.
     config = load_config(
-        {"CC_LLM_PROVIDER": "openai_compatible", "CC_LLM_BASE_URL": "http://localhost:11434/v1"}
+        {
+            "CC_LLM_PROVIDER": "openai_compatible",
+            "CC_LLM_BASE_URL": "http://localhost:11434/v1",
+            "CC_LLM_MODEL": "qwen2.5-coder",
+        }
     )
     assert config.base_url == "http://localhost:11434/v1"
     assert config.api_key == ""
+    assert config.model == "qwen2.5-coder"
+
+
+def test_anthropic_still_defaults_model_when_unset():
+    # Regression guard: this task must not make CC_LLM_MODEL required for
+    # the anthropic provider too — it keeps its existing default.
+    config = load_config({"CC_LLM_PROVIDER": "anthropic", "CC_LLM_API_KEY": "sk-test"})
+    assert config.model == "claude-haiku-4-5"
 
 
 def test_anthropic_still_does_not_require_base_url():

@@ -23,6 +23,16 @@ appends "/chat/completions" to whatever you set here. Examples:
 Test locally first (e.g. against Ollama) before pointing this at a real
 corporate gateway — same "probar con 1 nodo a mano" gate as the anthropic
 adapter's smoke test (Phase 2 Step 1), just for the second provider.
+
+Corporate-gateway gotchas, if the request fails on a real endpoint:
+  - 401 despite a valid token: confirm the gateway actually expects
+    `Authorization: Bearer <token>` — some enterprise gateways (notably
+    Azure OpenAI-style ones) use a different header (e.g. `api-key: ...`)
+    instead. This client only sends Bearer.
+  - Connection/SSL error against an internal https:// gateway: the
+    default client verifies TLS against the public `certifi` bundle,
+    which won't include your corporate CA. Point `SSL_CERT_FILE` or
+    `SSL_CERT_DIR` at the internal CA bundle (httpx honors both).
 """
 
 from cc.llm.client import LLMGenerationError
@@ -43,8 +53,8 @@ def main() -> None:
     except LLMConfigError as exc:
         print(f"Config error: {exc}")
         print(
-            "Set CC_LLM_PROVIDER=openai_compatible and CC_LLM_BASE_URL "
-            "(env vars or .env file) and retry."
+            "Set CC_LLM_PROVIDER=openai_compatible, CC_LLM_BASE_URL, and "
+            "CC_LLM_MODEL (env vars or .env file) and retry."
         )
         return
 
