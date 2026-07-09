@@ -112,6 +112,10 @@ def main() -> None:
             from cc.llm.anthropic_adapter import AnthropicClient
 
             client = AnthropicClient(config)
+        elif config.provider == "openai_compatible":
+            from cc.llm.openai_compatible_adapter import OpenAICompatibleClient
+
+            client = OpenAICompatibleClient(config)
         else:
             print(f"Provider {config.provider!r} is not implemented yet.")
             return

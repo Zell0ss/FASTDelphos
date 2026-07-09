@@ -37,18 +37,40 @@ def test_annotate_reports_config_error_without_crashing(tmp_path, monkeypatch, c
     assert "CC_LLM_PROVIDER" in captured.out
 
 
-def test_annotate_reports_unimplemented_provider(tmp_path, monkeypatch, capsys):
+def test_annotate_reports_config_error_when_openai_compatible_missing_base_url(
+    tmp_path, monkeypatch, capsys
+):
     _write_minimal_graph(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CC_LLM_PROVIDER", "openai_compatible")
-    monkeypatch.setenv("CC_LLM_API_KEY", "k")
-    monkeypatch.setenv("CC_LLM_BASE_URL", "http://localhost:8000/v1")
+    monkeypatch.delenv("CC_LLM_BASE_URL", raising=False)
     monkeypatch.setattr("sys.argv", ["cc", "annotate", str(tmp_path)])
 
     main()
 
     captured = capsys.readouterr()
-    assert "not implemented yet" in captured.out
+    assert "Config error" in captured.out
+    assert "CC_LLM_BASE_URL" in captured.out
+
+
+def test_annotate_wires_openai_compatible_provider(tmp_path, monkeypatch, capsys):
+    # Points at a loopback port nothing is listening on — connection fails
+    # fast (ECONNREFUSED), which run_annotate's per-node error handling
+    # (Phase 2 Step 2) already catches and reports as a failed node, not a
+    # crash. This proves the provider dispatch reaches the real annotate
+    # flow (never printing "not implemented yet."), without needing a real
+    # reachable endpoint.
+    _write_minimal_graph(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CC_LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setenv("CC_LLM_BASE_URL", "http://localhost:1/v1")
+    monkeypatch.setattr("sys.argv", ["cc", "annotate", str(tmp_path)])
+
+    main()
+
+    captured = capsys.readouterr()
+    assert "not implemented yet" not in captured.out
+    assert "Generadas:" in captured.out
 
 
 def test_annotate_missing_graph_json_prints_clear_message(tmp_path, monkeypatch, capsys):
