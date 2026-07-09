@@ -83,3 +83,31 @@ empty — so nothing today silently exercises or normalizes the wrong behavior.
 shared helper (matching `calls.py`'s existing `__init__`-stripping behavior, which already
 matches griffe's own `canonical_path` convention) — analogous to how the four
 function-node-hydration call sites were unified onto `src/cc/extract/_node_hydration.py`.
+
+## Static resolution of the `include_router` chain
+
+**Status:** ⏳ not implemented, deliberately deferred — scope decision pending.
+
+**Symptom / opportunity:** today the tool doesn't reconstruct the router-registration
+tree (`app.include_router(router, prefix=...)`, including nested router-of-routers)
+beyond extracting each router's own literal `prefix` to compute `full_path`. There's no
+derived `wired: true/false` per endpoint — a router declared in the code but never
+actually included from the real entrypoint (`main.py`) is reported identically to a live
+one today.
+
+**What implementing it would take:**
+1. Static resolution of the full `include_router` chain — literal prefixes, including
+   nested inclusion (a router that itself includes another router).
+2. Derive `wired: true/false` per endpoint: `false` when a router is declared but never
+   included from the entrypoint — rendered distinctly (dimmed / "not registered" badge).
+3. Extend the synthetic fixture
+   `test_two_routers_same_path_different_namespace_compiles_with_ambiguity_gap`
+   (`tests/test_pipeline.py`, plan `docs/superpowers/plans/2026-07-09-endpoint-identity-fix.md`)
+   with: a literal prefix passed to `include_router`, a nested prefix, and a prefix that
+   comes from a non-literal variable — this last case is a gap (`unresolved_dynamic`),
+   not something to guess.
+
+**Relevance:** found while fixing endpoint identity
+(`docs/superpowers/plans/2026-07-09-endpoint-identity-fix.md`) — explicitly out of scope
+for that plan, which resolves the identity collision when the apparent route matches, not
+the deeper question of whether a router is actually wired into the app at all.

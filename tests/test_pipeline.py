@@ -258,3 +258,46 @@ def test_decorated_function_that_is_caller_callee_and_table_toucher(tmp_path):
         "table:channels",
         "reads",
     ) in edge_types
+
+
+def test_two_routers_same_path_different_namespace_compiles_with_ambiguity_gap():
+    # Regression fixture for the real-world crash this plan fixes: two
+    # routers registered from different namespaces both declare
+    # `GET /ecosystems/`. Before the endpoint-id fix (Task 1) this crashed
+    # the whole compile via graph/build.py's identity assertion — same id,
+    # different file/line/hash. Synthetic fixture — never real BNP code.
+    with tempfile.TemporaryDirectory() as d:
+        repo = pathlib.Path(d) / "repo"
+        (repo / "team_a").mkdir(parents=True)
+        (repo / "team_a" / "__init__.py").write_text("", encoding="utf-8")
+        (repo / "team_a" / "routes.py").write_text(
+            "from fastapi import APIRouter\n\n"
+            "router = APIRouter()\n\n\n"
+            '@router.get("/ecosystems/")\n'
+            "def list_ecosystems():\n    return []\n",
+            encoding="utf-8",
+        )
+        (repo / "team_b").mkdir(parents=True)
+        (repo / "team_b" / "__init__.py").write_text("", encoding="utf-8")
+        (repo / "team_b" / "routes.py").write_text(
+            "from fastapi import APIRouter\n\n"
+            "router = APIRouter()\n\n\n"
+            '@router.get("/ecosystems/")\n'
+            "def list_ecosystems():\n    return []\n",
+            encoding="utf-8",
+        )
+        out = pathlib.Path(d) / "out"
+        run(repo, out)  # must not raise — this is the crash this plan fixes
+
+        data = json.loads((out / "graph.json").read_text())
+        ep_nodes = [n for n in data["nodes"] if n["type"] == "endpoint"]
+        assert len(ep_nodes) == 2
+        assert len({n["id"] for n in ep_nodes}) == 2  # distinct ids despite identical method+path
+
+        ambiguous = [
+            g
+            for g in data["gaps"]
+            if g["kind"] == "unresolved_dynamic" and "ruta ambigua" in g["missing"]
+        ]
+        assert len(ambiguous) == 1
+        assert ambiguous[0]["severity"] == {"comprehension": "warning", "compliance": "error"}
