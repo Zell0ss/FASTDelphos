@@ -10,7 +10,7 @@ Onboarding a new codebase (or an auditor reviewing one) usually means grepping f
 
 Two rules shape everything it does:
 
-- **Deterministic first.** Phase 1 (this repo, today) uses zero LLM calls — everything comes from parsing the source (`ast`, `griffe`, `sqlglot`). If a future phase adds LLM-generated content, it will be visually marked `inferred=true`, never mixed in silently.
+- **Deterministic first.** `cc compile` uses zero LLM calls — everything comes from parsing the source (`ast`, `griffe`, `sqlglot`). An optional second step, `cc annotate` (see [LLM why-notes](#llm-why-notes-cc-annotate)), can add LLM-generated why-notes on top — always visually marked `inferred=true`, in a separate overlay file, never mixed into the deterministic graph.
 - **Flag, don't guess.** When something can't be extracted from source (a table with no `CREATE TABLE` anywhere, a call resolved only at runtime via `Depends()`), the tool never invents an answer — it declares a **gap**, visible in the output, with a suggested fix where one makes sense.
 
 ## Quick start
@@ -93,6 +93,12 @@ Default is no content exclusions — explicit over implicit, nothing is silently
 
 Active patterns and their matched-file counts are visible in the sidebar (top, under the title) and in `graph.json`'s `exclusions` field, so an exclusion is always declared, never silent.
 
+**The target repo's own `.gitignore` is respected by default** (root + nested ones in subdirectories) — reuses the exact same exclusion set as `--exclude` above, so a file matched by either never appears in the graph, and both show up in the same declared exclusions report. No `git` binary or `.git` directory required — it's read as plain text via [`pathspec`](https://github.com/cpburnz/python-pathspec), never the machine's global gitignore or `.git/info/exclude` (those don't travel with the source, and using them would make output depend on who's running the tool). Pass `--no-gitignore` to turn it off and fall back to exactly `--exclude`'s behavior:
+
+```bash
+cc compile /path/to/repo --out ./output/repo --no-gitignore
+```
+
 ## Gaps — what the tool won't guess
 
 When source doesn't have the answer, the tool says so instead of inventing one. Three kinds, each aimed at a different audience:
@@ -117,7 +123,7 @@ adapter (fastapi) → extractors → graph build → gaps → render
 ## Development
 
 ```bash
-pytest                        # 127 tests, no JS runner (the render UI has no
+pytest                        # 285 tests, no JS runner (the render UI has no
                                # browser test harness — real verification during
                                # development is a throwaway Playwright script,
                                # not part of the committed suite)
@@ -141,9 +147,89 @@ It boots the target app for real (`app.openapi()`, which resolves mounted sub-ro
 
 Use it only against a repo you're comfortable importing locally (it boots clean with no real secrets/infra — a throwaway dev copy or a test fixture, never a repo carrying production credentials). It's how this project validates its own coverage, not a feature for auditing someone else's code.
 
+## LLM why-notes (`cc annotate`)
+
+Everything above is Phase 1: zero LLM, deterministic only. `cc annotate` is a separate, **opt-in** command layered on top of an already-compiled graph — it never touches `cc compile` or `graph.json`. Without any `CC_LLM_*` config set, the tool behaves exactly as described above; nothing about Phase 1 changes if you never run it.
+
+```bash
+cc compile /path/to/repo --out ./output/repo
+cc annotate ./output/repo
+```
+
+It reads `graph.json`, generates one short "why does this exist" note per node via an LLM, and writes them to a **separate overlay file**, `notes.json`, next to the compiled output — never merged into `graph.json` itself, so the deterministic graph stays byte-identical whether or not you ever run `cc annotate`, and a compliance audience can be handed the graph alone. Every note is hash-gated: it's tied to the `hash` of the node it was generated from, and only regenerates when that hash actually changes (`--force` to regenerate anyway). Notes render inline in the node panel for `function`/`endpoint` nodes, visually marked as LLM-generated (never mixed in with deterministic content unlabeled) — but only when the output is served over HTTP (`--serve`, or any static file server); opening `index.html` via `file://` can't `fetch()` a sibling JSON file, so it degrades gracefully to "no notes" rather than failing.
+
+By default, `cc annotate` covers every `endpoint` plus every "orchestrator" `function` (≥2 outgoing calls or ≥2 distinct tables touched) — the nodes most worth a one-line "why," not every leaf helper. Narrower or broader scope:
+
+```bash
+cc annotate ./output/repo --node function:backend.services.synthesis.build_context  # one node, on-demand
+cc annotate ./output/repo --all                                                     # every node
+```
+
+Configure via a `.env` file in the working directory (or real environment variables, which win over `.env` — same precedence as pods/CI expect) with a `CC_LLM_*` prefix. Two providers:
+
+```bash
+# Anthropic (direct SDK)
+CC_LLM_PROVIDER=anthropic
+CC_LLM_API_KEY=sk-...
+CC_LLM_MODEL=claude-haiku-4-5       # optional, this is the default
+
+# Any OpenAI-compatible gateway (local model server, corporate LLM gateway, ...)
+CC_LLM_PROVIDER=openai_compatible
+CC_LLM_BASE_URL=http://localhost:11434/v1   # full base URL including /v1 — the client appends /chat/completions
+CC_LLM_API_KEY=...                          # optional — many local dev servers don't need one
+CC_LLM_MODEL=qwen2.5-coder                  # required for this provider — no cross-provider default
+
+# Optional, either provider:
+CC_LLM_MAX_TOKENS=500                # a why-note is a paragraph, not an essay (default 500)
+CC_LLM_EXTRA_INSTRUCTIONS=           # extra per-provider prompt instructions (smaller models often need stricter prompts)
+CC_LLM_ORCHESTRATOR_THRESHOLD=2      # the ">=N" in the default-scope rule above
+```
+
+The `openai_compatible` provider is a thin `httpx` client against `POST {base_url}/chat/completions` — no vendor SDK, so it works against any gateway speaking the OpenAI chat-completions shape (Ollama, vLLM, a corporate gateway). The API key never appears in logs, in the compiled output, or in error messages — every failure is wrapped down to just its exception type name. See `scripts/openai_smoke_test.py` for a manual, never-automated connectivity check (including notes on Azure-style `api-key` header naming vs. this client's Bearer-only support, and internal TLS CA setup via `SSL_CERT_FILE`/`SSL_CERT_DIR`).
+
 ## Status
 
-Phase 1 (this repo): FastAPI adapter, fully static, zero LLM, validated against a real multi-router FastAPI + MariaDB target — **18/18 routes recovered (100%)** via `--oracle`. Two directions considered for what comes next — not started, no timeline:
+**Phase 1** (FastAPI adapter, fully static, zero LLM): complete, validated against a real multi-router FastAPI + MariaDB target — **18/18 routes recovered (100%)** via `--oracle`.
 
-- LLM-generated why-notes per node, hash-gated so they only regenerate when the underlying code actually changes.
-- A `generic` adapter — static analysis for non-FastAPI repos, interchangeable with the LLM option without touching anything in Phase 1.
+**Phase 2** (`cc annotate` — LLM why-notes, hash-gated, opt-in): complete — both the `anthropic` and `openai_compatible` providers are implemented (see [LLM why-notes](#llm-why-notes-cc-annotate) above).
+
+Hardened against a second real target beyond agora (a multi-router corporate repo): endpoint identity now survives two routers declaring the same apparent route from different namespaces (flagged as a gap, not a crash), and the target's own `.gitignore` is respected by default.
+
+Not started, no timeline: a `generic` adapter — static analysis for non-FastAPI repos, interchangeable with the LLM option without touching anything in Phase 1.
+
+## Glossary
+
+Terms used across this README and the codebase — the graph model, the resolution pipeline that fills it, and the libraries doing the work. For UI-specific jargon (hub badge, "Alcanzable desde") see [Using the UI](#using-the-ui); for gap severities see [Gaps](#gaps--what-the-tool-wont-guess).
+
+**Graph model**
+
+| Term | Meaning |
+|---|---|
+| Node | One graph vertex — `endpoint`, `function`, `model`, or `table`. Carries a stable `id`, a content `hash`, `inferred`, `file:line`, and type-specific `props`. |
+| Edge | A typed relationship between two nodes — `handles`, `calls`, `uses_model`, `reads`/`writes`. |
+| `id` | Stable node identity, derived from qualname + path (e.g. `function:agora.services.synthesis.build_context`). Survives edits to the function body — it's the anchor used to track "the same node" across recompiles. |
+| `hash` | Content fingerprint of the node's source span. Changes whenever the underlying code changes; the anchor a future LLM-annotation phase would use to decide "regenerate or reuse the cached note". |
+| `inferred` | `false` for everything in this phase — every field came from parsing source, never from a model. Reserved for a future phase where LLM-generated content gets flagged this way instead of mixed in silently. |
+| Gap | A declared "the tool doesn't know this" instead of a guessed answer. Three kinds: `missing_artifact` (the info isn't in the source anywhere — actionable, ask a dev to add it), `unresolved_dynamic` (the info only exists at runtime — not a defect, nothing to fix), `tool_limitation` (the info *is* in the source, this version just can't parse that shape). |
+| Hydrate / hydration | Turning a resolved reference (a bare qualname) into a full `Node` — file, line, `hash`, `props`. A call can resolve *structurally* (the visitor knows what it points to) without being hydratable — e.g. griffe can't locate the symbol's actual source (a namespace package, a compiled stub). It still counts toward coverage; it just can't be rendered as a node/edge. |
+
+**Resolution pipeline**
+
+| Term | Meaning |
+|---|---|
+| Adapter | The layer that knows what counts as an entry point for a given framework. Phase 1 has one: `fastapi` (a route = an endpoint). |
+| Extractor | An independent, deterministic pass turning source into one kind of node/edge — `endpoints.py`, `models.py`, `calls.py`, `sql.py`. |
+| `resolved_internal` | A call resolved to a function living inside the target repo — becomes a `calls` edge. |
+| `resolved_external` | A call whose target positively resolves to a package outside the repo's own top-level packages (stdlib, third-party). No edge, no gap — just an aggregate per-file count in the coverage report. Not knowing what a call is never counts as external; external is a positive conclusion, not an absence of resolution. |
+| `unresolved_dynamic` (resolution bucket) | The default when a call site can't be classified as internal or external — attribute chains, `getattr`, dict dispatch, `Depends(...)`. No gap is raised for this bucket; it's expected, not a defect. |
+| Coverage | The report of call sites resolved vs. unresolved, per file and aggregated — treated as a product metric (and, in a Corporate context, a lineage-completeness number), not a debug artifact. |
+| Oracle (`--oracle`) | A narrow, opt-in benchmark mode that boots the target app for real (`app.openapi()`) and diffs its actual registered routes against what static extraction found. Validates the extractor itself against a trusted target (agora) — not a tool for auditing third-party code. |
+
+**Libraries**
+
+| Term | Meaning |
+|---|---|
+| `griffe` | Static Python symbol inventory — builds a queryable table of qualnames, signatures, and source locations without importing the code. The resolver behind `models.py` and the call graph: the AST visitor in `calls.py` doesn't keep its own symbol table, it queries griffe's. |
+| AST / `ast` | Abstract Syntax Tree — a tree representation of source code, one node per language construct (a call, an assignment, an `if`, an import), instead of raw text. `ast` is the Python stdlib module (`import ast`) that parses `.py` files into this tree; `calls.py` walks it (`ast.parse()` + `ast.walk()`) to find `ast.Call` and `ast.Import`/`ast.ImportFrom` nodes. What makes it matter for this project: it reads structure without ever running the code — no side effects, no secrets, no infra — which is exactly the "source-only, zero infra" principle (the one deliberate exception is `--oracle`, which does import the target app, but only as an opt-in validator). |
+| `sqlglot` | SQL parser used by `sql.py` to pull table/column names out of raw queries (`CREATE TABLE`, `INSERT`, single-table `SELECT`). |
+| Cytoscape.js / dagre | The graph rendering library and its hierarchical layout extension, vendored inline into the compiled HTML — zero CDN dependency at view time. |
