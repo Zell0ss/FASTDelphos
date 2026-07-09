@@ -69,11 +69,53 @@ def test_records_class_methods(tmp_path):
 
 def test_top_level_packages_recorded_even_if_load_fails(tmp_path):
     repo = _make_repo(tmp_path)
-    _write(repo, "broken/__init__.py", "")
-    _write(repo, "broken/oops.py", "def f(:\n")  # SyntaxError — griffe.load will raise
+    # SyntaxError in the package's own __init__.py — verified empirically:
+    # this is what actually makes griffe.load raise (LoadingError). A
+    # SyntaxError in a *nested* submodule (e.g. broken/oops.py with a valid
+    # broken/__init__.py) does NOT raise — griffe silently loads the rest of
+    # the package and just omits that one submodule, no exception at all.
+    # That's a real, useful distinction: this test's actual point (a name
+    # still counts as internal even when we can't fully load it) needs the
+    # raising case to exercise the load_failures path below.
+    _write(repo, "broken/__init__.py", "def f(:\n")
     inv = build_symbol_inventory(repo)
-    assert "broken" in inv.top_level_packages  # directory-based, not parse-success-based
+    assert "broken" in inv.top_level_packages  # attempted, not load-success-based
     assert "services" in inv.top_level_packages
+    failures = {pkg: (location, error) for pkg, location, error in inv.load_failures}
+    assert "broken" in failures
+    assert str(repo / "broken") == failures["broken"][0]
+
+
+def test_namespace_package_without_init_is_discovered_and_internal(tmp_path):
+    # Mirrors illumiows: a root-level namespace package (no __init__.py) with
+    # normal subpackages inside, alongside loose standalone modules at the
+    # repo root. Before this fix, "api" was invisible to discovery (which
+    # required __init__.py) — its calls resolved as external "with positive
+    # evidence" instead of internal, because no top-level name for it ever
+    # existed to check against.
+    repo = tmp_path / "repo"
+    _write(repo, "api/routes/__init__.py", "")
+    _write(
+        repo,
+        "api/routes/views.py",
+        (
+            "from api.routes import crud\n\n\n"
+            "def delete_iplist_allregions(list_id):\n"
+            "    return crud.delete_iplist(list_id)\n"
+        ),
+    )
+    _write(repo, "api/routes/crud.py", "def delete_iplist(list_id):\n    return list_id\n")
+    _write(repo, "asgi.py", "from api.routes import views\n")
+    _write(repo, "conftest.py", "import pytest\n")
+
+    inv = build_symbol_inventory(repo)
+
+    assert "api" in inv.top_level_packages
+    assert "asgi" in inv.top_level_packages
+    assert "conftest" in inv.top_level_packages
+    assert "api.routes.views.delete_iplist_allregions" in inv.functions
+    assert "api.routes.crud.delete_iplist" in inv.functions
+    assert not inv.load_failures
 
 
 import ast

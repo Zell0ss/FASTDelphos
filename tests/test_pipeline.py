@@ -376,6 +376,36 @@ def test_run_reports_gitignore_exclusion_in_graph_json(tmp_path):
     assert {"pattern": "(.gitignore)", "count": 1} in data["exclusions"]
 
 
+def test_namespace_package_calls_resolve_as_internal():
+    # End-to-end regression for the illumiows classifier bug: a namespace
+    # package (no __init__.py) at repo root must produce a real `calls`
+    # edge between its own functions, not get miscategorized as external.
+    with tempfile.TemporaryDirectory() as d:
+        repo = pathlib.Path(d) / "repo"
+        (repo / "api" / "routes").mkdir(parents=True)
+        (repo / "api" / "routes" / "__init__.py").write_text("", encoding="utf-8")
+        (repo / "api" / "routes" / "views.py").write_text(
+            "from api.routes import crud\n\n\n"
+            "def delete_iplist_allregions(list_id):\n"
+            "    return crud.delete_iplist(list_id)\n",
+            encoding="utf-8",
+        )
+        (repo / "api" / "routes" / "crud.py").write_text(
+            "def delete_iplist(list_id):\n    return list_id\n", encoding="utf-8"
+        )
+        (repo / "asgi.py").write_text("from api.routes import views\n", encoding="utf-8")
+        out = pathlib.Path(d) / "out"
+
+        run(repo, out)
+
+        data = json.loads((out / "graph.json").read_text())
+        call_edges = {(e["from_"], e["to"]) for e in data["edges"] if e["type"] == "calls"}
+        assert (
+            "function:api.routes.views.delete_iplist_allregions",
+            "function:api.routes.crud.delete_iplist",
+        ) in call_edges
+
+
 def test_run_is_deterministic_with_gitignore_active(tmp_path):
     repo = tmp_path / "repo"
     (repo / "backend").mkdir(parents=True)

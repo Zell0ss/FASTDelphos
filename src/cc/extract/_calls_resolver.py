@@ -33,6 +33,11 @@ class SymbolInventory:
     class_bases: dict[str, list[str]] = field(default_factory=dict)
     class_methods: dict[str, dict[str, str]] = field(default_factory=dict)
     top_level_packages: set[str] = field(default_factory=set)
+    load_failures: list[tuple[str, str, str]] = field(default_factory=list)
+    # (pkg_name, location, error) — a top-level package/module we attempted
+    # to load via griffe but couldn't (e.g. a SyntaxError inside it). It
+    # still counts as internal in top_level_packages — we know it's ours,
+    # we just can't see inside it right now.
 
 
 def _walk_griffe_functions(
@@ -40,7 +45,13 @@ def _walk_griffe_functions(
 ) -> None:
     if isinstance(obj, griffe.Alias):
         return
-    if getattr(obj, "filepath", None) in excluded:
+    filepath = getattr(obj, "filepath", None)
+    # A PEP 420 namespace package's own Module has a *list* of filepaths (one
+    # per search root it spans), not a single Path — unlike every other node
+    # here. It isn't itself a file that could match an exclude pattern, so it
+    # can never be individually excluded; membership is decided per-child as
+    # the walk descends into its actual files.
+    if not isinstance(filepath, list) and filepath in excluded:
         return
 
     if isinstance(obj, griffe.Function):
@@ -78,51 +89,64 @@ def build_symbol_inventory(
     exclude_patterns: tuple[str, ...] = (),
     use_gitignore: bool = True,
 ) -> SymbolInventory:
-    """Load the repo's own top-level packages via griffe and collect every
-    function/method qualname, class base-class relationship, and the set of
-    top-level package names that belong to the repo (used later to tell
-    "external" imports from "internal but unresolved" ones).
+    """Discover the repo's own top-level packages/modules and load every one
+    of them via griffe, collecting every function/method qualname, class
+    base-class relationship, and the set of top-level names that belong to
+    the repo (used later to tell "external" imports from "internal but
+    unresolved" ones).
+
+    A top-level name counts as internal as soon as we ATTEMPT to load it —
+    not only if griffe succeeds. A package with one syntax-broken file
+    inside is still our code; calls into it should resolve as
+    unresolved_dynamic ("ours, but opaque"), never external ("someone
+    else's"). Failed attempts are recorded in `load_failures` so the caller
+    can surface them as gaps instead of silently losing the information.
+
+    Discovery does not require `__init__.py` — a PEP 420 namespace package
+    (a directory with .py files but no `__init__.py`) is a perfectly valid
+    top-level package and must be attempted like any other. Requiring
+    `__init__.py` was the root cause of a real repo compiling with zero
+    internal calls resolved: every call into its namespace-package root
+    fell through to "external, with positive evidence" for lack of any
+    top-level name to check it against.
     """
     repo_path = pathlib.Path(repo_path)
     excluded = excluded_files(repo_path, exclude_patterns, use_gitignore)
     inv = SymbolInventory()
 
-    def _try_load(pkg_name: str, search_paths: list[pathlib.Path]) -> None:
+    def _try_load(
+        pkg_name: str, search_paths: list[pathlib.Path], location: pathlib.Path
+    ) -> None:
         sys.path.insert(0, str(search_paths[0]))
         try:
             pkg = griffe.load(pkg_name, search_paths=search_paths)
             _walk_griffe_functions(pkg, inv, [], excluded)
-        except Exception:
-            pass
+        except Exception as exc:
+            inv.load_failures.append((pkg_name, str(location), str(exc)))
         finally:
             try:
                 sys.path.remove(str(search_paths[0]))
             except ValueError:
                 pass
 
-    loaded_any = False
-    for init in repo_path.glob("*/__init__.py"):
-        if init.parent.name in _SKIP_DIRS:
+    found_any = False
+    for entry in sorted(repo_path.iterdir()):
+        if entry.name in _SKIP_DIRS:
             continue
-        inv.top_level_packages.add(init.parent.name)
-        _try_load(init.parent.name, [repo_path])
-        loaded_any = True
-
-    if not loaded_any and (repo_path / "__init__.py").exists():
-        inv.top_level_packages.add(repo_path.name)
-        _try_load(repo_path.name, [repo_path.parent])
-    else:
-        # Standalone modules living directly at the repo root (no package
-        # wrapping them) are invisible to the subpackage/whole-repo-package
-        # loading above. `griffe.load` can load a single module by name just
-        # like a package — treat each root-level .py file the same way, so
-        # calls into it resolve instead of falling through to "external"
-        # for lack of any evidence either way.
-        for py_file in repo_path.glob("*.py"):
-            if py_file.name == "__init__.py":
+        if entry.is_dir():
+            if not any(entry.rglob("*.py")):
                 continue
-            inv.top_level_packages.add(py_file.stem)
-            _try_load(py_file.stem, [repo_path])
+            inv.top_level_packages.add(entry.name)
+            _try_load(entry.name, [repo_path], entry)
+            found_any = True
+        elif entry.suffix == ".py" and entry.name != "__init__.py":
+            inv.top_level_packages.add(entry.stem)
+            _try_load(entry.stem, [repo_path], entry)
+            found_any = True
+
+    if not found_any and (repo_path / "__init__.py").exists():
+        inv.top_level_packages.add(repo_path.name)
+        _try_load(repo_path.name, [repo_path.parent], repo_path)
 
     return inv
 
