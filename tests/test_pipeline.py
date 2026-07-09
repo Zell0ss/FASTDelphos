@@ -265,7 +265,7 @@ def test_two_routers_same_path_different_namespace_compiles_with_ambiguity_gap()
     # routers registered from different namespaces both declare
     # `GET /ecosystems/`. Before the endpoint-id fix (Task 1) this crashed
     # the whole compile via graph/build.py's identity assertion — same id,
-    # different file/line/hash. Synthetic fixture — never real BNP code.
+    # different file/line/hash. Synthetic fixture — never real Corporate code.
     with tempfile.TemporaryDirectory() as d:
         repo = pathlib.Path(d) / "repo"
         (repo / "team_a").mkdir(parents=True)

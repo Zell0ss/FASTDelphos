@@ -6,7 +6,7 @@ from cc.llm.config import LLMConfig
 
 class OpenAICompatibleClient:
     """LLMClient implementation for any OpenAI-compatible /v1/chat/completions
-    endpoint (BNP's internal Qwen Coder gateway, a local Ollama/vLLM server,
+    endpoint (Corporate's internal Qwen Coder gateway, a local Ollama/vLLM server,
     or any future provider exposing the same REST shape).
 
     `config.base_url` is the full base INCLUDING /v1 (e.g.
