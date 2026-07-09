@@ -82,6 +82,19 @@ def run(
             )
         )
 
+    for pkg_name, location, error in inventory.load_failures:
+        graph.gaps.append(
+            Gap(
+                kind="tool_limitation",
+                where=f"{location}:0",
+                node_id=None,
+                missing=f"Package `{pkg_name}` could not be loaded by griffe — {error}",
+                suggested="Fix the error so griffe can introspect this package; until "
+                "then, calls into it resolve as unresolved_dynamic instead of a real edge.",
+                severity={"comprehension": "warning", "compliance": "error"},
+            )
+        )
+
     if call_excluded:
         total_files = len(collect_py_files(repo_path, exclude_patterns, use_gitignore))
         excluded_count = len(call_excluded)

@@ -419,3 +419,27 @@ def test_run_is_deterministic_with_gitignore_active(tmp_path):
     run(repo, out_1)
     run(repo, out_2)
     assert (out_1 / "graph.json").read_text() == (out_2 / "graph.json").read_text()
+
+
+def test_package_load_failure_surfaces_as_tool_limitation_gap():
+    with tempfile.TemporaryDirectory() as d:
+        repo = pathlib.Path(d) / "repo"
+        (repo / "broken").mkdir(parents=True)
+        # SyntaxError in __init__.py itself, not a nested submodule — see
+        # the note on test_top_level_packages_recorded_even_if_load_fails
+        # (Task 1) for why that distinction is what actually makes
+        # griffe.load raise instead of silently tolerating it.
+        (repo / "broken" / "__init__.py").write_text("def f(:\n", encoding="utf-8")
+        out = pathlib.Path(d) / "out"
+
+        run(repo, out)
+
+        data = json.loads((out / "graph.json").read_text())
+        load_gaps = [
+            g
+            for g in data["gaps"]
+            if g["kind"] == "tool_limitation" and "griffe" in g["missing"]
+        ]
+        assert len(load_gaps) == 1
+        assert "broken" in load_gaps[0]["missing"]
+        assert load_gaps[0]["severity"] == {"comprehension": "warning", "compliance": "error"}
