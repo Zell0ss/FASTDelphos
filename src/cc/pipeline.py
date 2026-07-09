@@ -93,6 +93,11 @@ def run(
             rel = pathlib.Path(filepath).relative_to(repo_path)
             print(f"    excluded: {rel} — {error}")
 
+    print(
+        "  top-level packages detected: "
+        f"{', '.join(sorted(inventory.top_level_packages)) or '(none)'}"
+    )
+
     total = call_coverage["total"]
     print(
         f"  call graph coverage: {total['resolved_internal']} internal, "

@@ -39,6 +39,13 @@
     .ep-btn:hover  { background: #353565; }
     .ep-btn.active { background: #4a3070; border-color: #7755aa; }
 
+    .ep-namespace {
+      font-size: 10px; font-weight: bold; color: #778; text-transform: uppercase;
+      letter-spacing: 0.3px; margin: 8px 0 2px; padding-top: 4px;
+      border-top: 1px solid #2a2a45;
+    }
+    .ep-namespace:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+
     .badge { font-size: 10px; padding: 1px 4px; border-radius: 3px; color: #fff; margin-right: 4px; }
     .GET { background: #28a745; } .POST { background: #007bff; }
     .PUT { background: #fd7e14; } .DELETE { background: #dc3545; }
@@ -690,14 +697,28 @@
       }
     }
 
-    // ── Endpoint list ─────────────────────────────────────────────────────────
+    // ── Endpoint list, grouped by namespace (handler's module) ─────────────────
     const epList = document.getElementById('ep-list');
+    const epByNamespace = new Map();
     for (const n of GRAPH.nodes.filter(n => n.type === 'endpoint')) {
-      const btn = document.createElement('button');
-      btn.className = 'ep-btn';
-      btn.innerHTML = `<span class="badge ${n.props.method}">${n.props.method}</span>${n.props.path}`;
-      btn.onclick = () => loadEndpoint(n.id, btn);
-      epList.appendChild(btn);
+      const handler = n.props.handler || '';
+      const dot = handler.lastIndexOf('.');
+      const ns = dot === -1 ? '(root)' : handler.slice(0, dot);
+      if (!epByNamespace.has(ns)) epByNamespace.set(ns, []);
+      epByNamespace.get(ns).push(n);
+    }
+    for (const ns of [...epByNamespace.keys()].sort()) {
+      const header = document.createElement('div');
+      header.className = 'ep-namespace';
+      header.textContent = ns;
+      epList.appendChild(header);
+      for (const n of epByNamespace.get(ns)) {
+        const btn = document.createElement('button');
+        btn.className = 'ep-btn';
+        btn.innerHTML = `<span class="badge ${n.props.method}">${n.props.method}</span>${n.props.path}`;
+        btn.onclick = () => loadEndpoint(n.id, btn);
+        epList.appendChild(btn);
+      }
     }
 
     // ── Search UI wiring ──────────────────────────────────────────────────────
