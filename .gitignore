@@ -19,3 +19,4 @@ build/
 tomorrow.md
 output/
 cc-out/
+.env
