@@ -42,6 +42,7 @@ def test_annotate_reports_unimplemented_provider(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CC_LLM_PROVIDER", "openai_compatible")
     monkeypatch.setenv("CC_LLM_API_KEY", "k")
+    monkeypatch.setenv("CC_LLM_BASE_URL", "http://localhost:8000/v1")
     monkeypatch.setattr("sys.argv", ["cc", "annotate", str(tmp_path)])
 
     main()

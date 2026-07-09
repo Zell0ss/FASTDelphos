@@ -92,6 +92,10 @@ def load_config(env: dict[str, str] | None = None) -> LLMConfig:
             raise LLMConfigError("CC_LLM_ORCHESTRATOR_THRESHOLD must be a positive integer")
 
     base_url = values.get("CC_LLM_BASE_URL", "").strip() or None
+    if provider == "openai_compatible" and not base_url:
+        raise LLMConfigError(
+            "CC_LLM_BASE_URL is not set (required for provider=openai_compatible)"
+        )
     extra_instructions = values.get("CC_LLM_EXTRA_INSTRUCTIONS", "").strip() or None
 
     return LLMConfig(

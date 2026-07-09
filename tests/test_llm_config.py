@@ -40,7 +40,11 @@ def test_openai_compatible_provider_value_is_accepted_at_config_time():
     # The adapter for this provider doesn't exist until a later plan — but
     # config loading itself must not reject the value, per the plan's scope.
     config = load_config(
-        {"CC_LLM_PROVIDER": "openai_compatible", "CC_LLM_API_KEY": "sk-test-key"}
+        {
+            "CC_LLM_PROVIDER": "openai_compatible",
+            "CC_LLM_API_KEY": "sk-test-key",
+            "CC_LLM_BASE_URL": "http://localhost:8000/v1",
+        }
     )
     assert config.provider == "openai_compatible"
 
@@ -182,3 +186,24 @@ def test_orchestrator_threshold_must_be_a_positive_integer():
                 "CC_LLM_ORCHESTRATOR_THRESHOLD": "0",
             }
         )
+
+
+def test_openai_compatible_requires_base_url():
+    with pytest.raises(LLMConfigError, match="CC_LLM_BASE_URL"):
+        load_config({"CC_LLM_PROVIDER": "openai_compatible", "CC_LLM_API_KEY": ""})
+
+
+def test_openai_compatible_with_base_url_and_no_api_key_is_valid():
+    # api_key is optional for this provider — many local dev servers don't need one.
+    config = load_config(
+        {"CC_LLM_PROVIDER": "openai_compatible", "CC_LLM_BASE_URL": "http://localhost:11434/v1"}
+    )
+    assert config.base_url == "http://localhost:11434/v1"
+    assert config.api_key == ""
+
+
+def test_anthropic_still_does_not_require_base_url():
+    # Regression guard: this task must not accidentally make base_url
+    # required for the anthropic provider too.
+    config = load_config({"CC_LLM_PROVIDER": "anthropic", "CC_LLM_API_KEY": "sk-test"})
+    assert config.base_url is None
