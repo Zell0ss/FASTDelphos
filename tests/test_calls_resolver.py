@@ -643,6 +643,17 @@ def test_build_symbol_inventory_excludes_matching_files(tmp_path):
     assert "backend.tests.helpers.drop" not in inv.functions
 
 
+def test_build_symbol_inventory_excludes_gitignored_files(tmp_path):
+    _write(tmp_path, "backend/__init__.py", "")
+    _write(tmp_path, "backend/app.py", "def keep():\n    return 1\n")
+    _write(tmp_path, ".gitignore", "backend/generated.py\n")
+    _write(tmp_path, "backend/generated.py", "def drop():\n    return 2\n")
+
+    inv = build_symbol_inventory(tmp_path)
+    assert "backend.app.keep" in inv.functions
+    assert "backend.generated.drop" not in inv.functions
+
+
 def test_build_symbol_inventory_no_patterns_unaffected(tmp_path):
     repo = tmp_path / "repo"
     _write(repo, "backend/__init__.py", "")

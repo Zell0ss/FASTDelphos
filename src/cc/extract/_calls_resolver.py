@@ -74,7 +74,9 @@ def _walk_griffe_functions(
 
 
 def build_symbol_inventory(
-    repo_path: str | pathlib.Path, exclude_patterns: tuple[str, ...] = ()
+    repo_path: str | pathlib.Path,
+    exclude_patterns: tuple[str, ...] = (),
+    use_gitignore: bool = True,
 ) -> SymbolInventory:
     """Load the repo's own top-level packages via griffe and collect every
     function/method qualname, class base-class relationship, and the set of
@@ -82,7 +84,7 @@ def build_symbol_inventory(
     "external" imports from "internal but unresolved" ones).
     """
     repo_path = pathlib.Path(repo_path)
-    excluded = excluded_files(repo_path, exclude_patterns)
+    excluded = excluded_files(repo_path, exclude_patterns, use_gitignore)
     inv = SymbolInventory()
 
     def _try_load(pkg_name: str, search_paths: list[pathlib.Path]) -> None:

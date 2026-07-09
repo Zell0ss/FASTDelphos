@@ -53,6 +53,7 @@ def extract_calls(
     exclude_patterns: tuple[str, ...] = (),
     inventory: "SymbolInventory | None" = None,
     ast_cache: dict[str, ast.Module | None] | None = None,
+    use_gitignore: bool = True,
 ) -> tuple[list[Node], list[Edge], list[tuple[str, str]], dict]:
     """Return (function nodes, call edges, [(excluded_file, error_msg)], coverage).
 
@@ -61,12 +62,12 @@ def extract_calls(
               "resolved_external", "unresolved_dynamic"}.
     """
     repo_path = pathlib.Path(repo_path)
-    files = collect_py_files(repo_path, exclude_patterns)
+    files = collect_py_files(repo_path, exclude_patterns, use_gitignore)
     if not files:
         return [], [], [], {"per_file": {}, "total": _zero_counts()}
 
     if inventory is None:
-        inventory = build_symbol_inventory(repo_path, exclude_patterns)
+        inventory = build_symbol_inventory(repo_path, exclude_patterns, use_gitignore)
 
     if ast_cache is None:
         ast_cache = {}

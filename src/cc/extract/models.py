@@ -12,10 +12,12 @@ _SKIP_DIRS = {".venv", "__pycache__", ".git", "node_modules", ".tox", "dist", "b
 
 
 def _load_models(
-    repo_path: pathlib.Path, exclude_patterns: tuple[str, ...] = ()
+    repo_path: pathlib.Path,
+    exclude_patterns: tuple[str, ...] = (),
+    use_gitignore: bool = True,
 ) -> dict[str, "griffe.Class"]:
     """Return short_name -> griffe.Class for all BaseModel subclasses under repo_path."""
-    excluded = excluded_files(repo_path, exclude_patterns)
+    excluded = excluded_files(repo_path, exclude_patterns, use_gitignore)
     found: dict[str, griffe.Class] = {}
 
     def _try_load(pkg_name: str, search_paths: list[pathlib.Path]) -> None:
@@ -104,9 +106,10 @@ def extract_models(
     repo_path: str | pathlib.Path,
     handler_nodes: list[Node],
     exclude_patterns: tuple[str, ...] = (),
+    use_gitignore: bool = True,
 ) -> tuple[list[Node], list[Edge]]:
     repo_path = pathlib.Path(repo_path)
-    griffe_models = _load_models(repo_path, exclude_patterns)
+    griffe_models = _load_models(repo_path, exclude_patterns, use_gitignore)
 
     model_nodes: dict[str, Node] = {}
     for short_name, cls in griffe_models.items():

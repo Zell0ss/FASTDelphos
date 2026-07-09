@@ -74,16 +74,17 @@ def extract_endpoints(
     exclude_patterns: tuple[str, ...] = (),
     inventory: SymbolInventory | None = None,
     ast_cache: dict[str, ast.Module | None] | None = None,
+    use_gitignore: bool = True,
 ) -> tuple[list[Node], list[Edge]]:
     repo_path = pathlib.Path(repo_path)
     if inventory is None:
-        inventory = build_symbol_inventory(repo_path, exclude_patterns)
+        inventory = build_symbol_inventory(repo_path, exclude_patterns, use_gitignore)
     if ast_cache is None:
         ast_cache = {}
     nodes: list[Node] = []
     edges: list[Edge] = []
 
-    for file in collect_py_files(repo_path, exclude_patterns):
+    for file in collect_py_files(repo_path, exclude_patterns, use_gitignore):
         source = file.read_text(encoding="utf-8")
         try:
             tree = ast.parse(source, filename=str(file))

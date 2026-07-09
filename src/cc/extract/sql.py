@@ -130,10 +130,11 @@ def extract_sql(
     exclude_patterns: tuple[str, ...] = (),
     inventory: SymbolInventory | None = None,
     ast_cache: dict[str, ast.Module | None] | None = None,
+    use_gitignore: bool = True,
 ) -> tuple[list[Node], list[Edge], list[tuple[str, int, str]]]:
     repo_path = pathlib.Path(repo_path)
     if inventory is None:
-        inventory = build_symbol_inventory(repo_path, exclude_patterns)
+        inventory = build_symbol_inventory(repo_path, exclude_patterns, use_gitignore)
     if ast_cache is None:
         ast_cache = {}
     table_columns: dict[str, set[str]] = defaultdict(set)
@@ -143,7 +144,7 @@ def extract_sql(
     ] = []  # (fn_qname, table, op, via, edge_file, edge_lineno, enclosing_def_node)
     dynamic_gaps: list[tuple[str, int, str]] = []
 
-    for file in collect_py_files(repo_path, exclude_patterns):
+    for file in collect_py_files(repo_path, exclude_patterns, use_gitignore):
         source = file.read_text(encoding="utf-8")
         try:
             tree = ast.parse(source, filename=str(file))

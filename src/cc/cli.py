@@ -45,6 +45,12 @@ def main() -> None:
         help="Glob pattern (relative to the repo root) to exclude from the graph, "
         "e.g. --exclude 'backend/tests/**'. Repeatable.",
     )
+    comp.add_argument(
+        "--no-gitignore",
+        action="store_true",
+        help="Do not respect the target repo's own .gitignore (root + nested). "
+        "By default, gitignored files are excluded just like --exclude patterns.",
+    )
 
     ann = sub.add_parser("annotate", help="Generate LLM why-notes overlay for a compiled graph")
     ann.add_argument(
@@ -70,8 +76,9 @@ def main() -> None:
 
     if args.cmd == "compile":
         exclude_patterns = tuple(args.exclude or ())
+        use_gitignore = not args.no_gitignore
         print(f"Compiling {args.repo} → {args.out} …")
-        run(args.repo, args.out, exclude_patterns=exclude_patterns)
+        run(args.repo, args.out, exclude_patterns=exclude_patterns, use_gitignore=use_gitignore)
         print(f"Done. Open {args.out}/index.html")
         if args.oracle:
             import sys

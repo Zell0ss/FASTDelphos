@@ -35,6 +35,29 @@ def test_call_into_excluded_file_falls_to_dynamic_not_phantom_node(tmp_path):
     assert per_file["resolved_internal"] == 0
 
 
+def test_call_into_gitignored_file_falls_to_dynamic_not_phantom_node(tmp_path):
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "backend" / "app.py").write_text(
+        "from backend.generated import helper\n\n\ndef use_it():\n    return helper()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".gitignore").write_text("backend/generated.py\n", encoding="utf-8")
+    (tmp_path / "backend" / "generated.py").write_text(
+        "def helper():\n    return 1\n", encoding="utf-8"
+    )
+
+    nodes, edges, _, coverage = extract_calls(tmp_path)
+
+    node_ids = {n.id for n in nodes}
+    assert "function:backend.generated.helper" not in node_ids
+    froms = {e.from_ for e in edges}
+    assert "function:backend.app.use_it" not in froms
+    per_file = coverage["per_file"]["backend/app.py"]
+    assert per_file["unresolved_dynamic"] == 1
+    assert per_file["resolved_internal"] == 0
+
+
 def test_extract_calls_excluded_file_produces_no_own_nodes(tmp_path):
     (tmp_path / "backend").mkdir()
     (tmp_path / "backend" / "__init__.py").write_text("", encoding="utf-8")
@@ -190,7 +213,7 @@ def test_unknown_filepath_callee_does_not_crash(tmp_path, monkeypatch):
     monkeypatch.setattr(
         calls_mod,
         "build_symbol_inventory",
-        lambda repo_path, exclude_patterns=(): fake_inventory,
+        lambda repo_path, exclude_patterns=(), use_gitignore=True: fake_inventory,
     )
     # `user.py` at the repo root has module_qname "user", so case 1's module-local
     # check (`candidate = f"{module_qname}.{name}"`) resolves `helper(x)` to

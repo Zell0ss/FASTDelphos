@@ -301,3 +301,91 @@ def test_two_routers_same_path_different_namespace_compiles_with_ambiguity_gap()
         ]
         assert len(ambiguous) == 1
         assert ambiguous[0]["severity"] == {"comprehension": "warning", "compliance": "error"}
+
+
+def test_run_excludes_gitignored_file_by_default(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "app.py").write_text("def keep():\n    return 1\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("backend/generated.py\n", encoding="utf-8")
+    (repo / "backend" / "generated.py").write_text("def drop():\n    return 2\n", encoding="utf-8")
+    out = tmp_path / "out"
+    run(repo, out)
+    data = json.loads((out / "graph.json").read_text())
+    fn_ids = {n["id"] for n in data["nodes"] if n["type"] == "function"}
+    assert "function:backend.app.keep" in fn_ids
+    assert "function:backend.generated.drop" not in fn_ids
+
+
+def test_run_no_gitignore_flag_reproduces_prior_behavior_byte_for_byte(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "app.py").write_text("def keep():\n    return 1\n", encoding="utf-8")
+    (repo / "backend" / "generated.py").write_text("def drop():\n    return 2\n", encoding="utf-8")
+
+    out_before = tmp_path / "out_before"
+    run(repo, out_before)  # no .gitignore exists yet — today's behavior
+
+    (repo / ".gitignore").write_text("backend/generated.py\n", encoding="utf-8")
+    out_after = tmp_path / "out_after"
+    run(repo, out_after, use_gitignore=False)  # .gitignore now exists, but disabled
+
+    before = (out_before / "graph.json").read_text()
+    after = (out_after / "graph.json").read_text()
+    assert before == after
+
+
+def test_gitignore_excluded_run_keeps_surviving_node_ids_and_hashes_stable(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "app.py").write_text("def keep():\n    return 1\n", encoding="utf-8")
+    (repo / "backend" / "generated.py").write_text("def drop():\n    return 2\n", encoding="utf-8")
+
+    out_a = tmp_path / "out_a"
+    run(repo, out_a, use_gitignore=False)
+
+    (repo / ".gitignore").write_text("backend/generated.py\n", encoding="utf-8")
+    out_b = tmp_path / "out_b"
+    run(repo, out_b)
+
+    nodes_a = {n["id"]: n for n in json.loads((out_a / "graph.json").read_text())["nodes"]}
+    nodes_b = {n["id"]: n for n in json.loads((out_b / "graph.json").read_text())["nodes"]}
+
+    assert "function:backend.generated.drop" in nodes_a
+    assert "function:backend.generated.drop" not in nodes_b
+
+    common_ids = set(nodes_a) & set(nodes_b)
+    assert "function:backend.app.keep" in common_ids
+    for node_id in common_ids:
+        assert nodes_a[node_id]["hash"] == nodes_b[node_id]["hash"]
+
+
+def test_run_reports_gitignore_exclusion_in_graph_json(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "app.py").write_text("def keep():\n    return 1\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("backend/generated.py\n", encoding="utf-8")
+    (repo / "backend" / "generated.py").write_text("def drop():\n    return 2\n", encoding="utf-8")
+    out = tmp_path / "out"
+    run(repo, out)
+    data = json.loads((out / "graph.json").read_text())
+    assert {"pattern": "(.gitignore)", "count": 1} in data["exclusions"]
+
+
+def test_run_is_deterministic_with_gitignore_active(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "backend" / "app.py").write_text("def keep():\n    return 1\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("backend/generated.py\n", encoding="utf-8")
+    (repo / "backend" / "generated.py").write_text("def drop():\n    return 2\n", encoding="utf-8")
+
+    out_1 = tmp_path / "out_1"
+    out_2 = tmp_path / "out_2"
+    run(repo, out_1)
+    run(repo, out_2)
+    assert (out_1 / "graph.json").read_text() == (out_2 / "graph.json").read_text()
