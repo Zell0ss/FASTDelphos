@@ -115,7 +115,11 @@ def build_symbol_inventory(
     auto-detection still gets it wrong — it replaces the detected
     `top_level_packages` outright. If it disagrees with what was detected,
     a warning is printed showing both sets, so the mismatch is never
-    silent even though the override wins.
+    silent even though the override wins. Note the override only affects
+    the external-vs-dynamic decision for calls that don't already resolve
+    to a function griffe actually loaded — it can't manufacture new
+    `resolved_internal` edges for a package griffe never saw, nor demote a
+    genuinely-loaded function back to external.
     """
     repo_path = pathlib.Path(repo_path)
     excluded = excluded_files(repo_path, exclude_patterns, use_gitignore)

@@ -111,3 +111,33 @@ one today.
 (`docs/superpowers/plans/2026-07-09-endpoint-identity-fix.md`) — explicitly out of scope
 for that plan, which resolves the identity collision when the apparent route matches, not
 the deeper question of whether a router is actually wired into the app at all.
+
+## Top-level package discovery ignores exclude_patterns/.gitignore
+
+**Status:** ⏳ not implemented, low urgency — no known repo where this changes real output.
+
+**Symptom:** `build_symbol_inventory`'s discovery loop (`src/cc/extract/_calls_resolver.py`)
+decides whether a top-level directory counts as internal via an unfiltered
+`any(entry.rglob("*.py"))` check, and unconditionally adds the directory's name to
+`top_level_packages` — both independent of `exclude_patterns`/`.gitignore`. Loading
+(`_walk_griffe_functions`'s per-child `excluded` check) *does* respect exclusions. So a
+top-level directory whose only `.py` files are all excluded (vendored/gitignored) can still
+land in `top_level_packages`, contributing zero functions to the inventory but still
+flipping any `dirname.*` call from `resolved_external` to `unresolved_dynamic`.
+
+Observed in practice (harmlessly) against agora: `frontend/` newly appears in the
+"top-level packages detected" report line after the namespace-package discovery fix
+(`docs/superpowers/plans/2026-07-09-classifier-internal-external-fix.md`, Task 1), because
+`frontend/node_modules/flatted/python/flatted.py` exists — but that file (and everything
+importable from it) is excluded, so `graph.json` is byte-identical either way for agora
+specifically (verified in that plan's Task 6).
+
+**What implementing it would take:** gate the directory `.py`-existence check (and the
+subsequent `top_level_packages.add`) through the same `excluded_files`/`collect_py_files`
+filtering that loading already uses, so discovery and loading agree on what counts as
+first-party source for a given repo's exclude configuration.
+
+**Relevance:** found during the final whole-branch review of
+`docs/superpowers/plans/2026-07-09-classifier-internal-external-fix.md` — no test or real
+target currently exercises a case where this actually changes classification output, so
+deferred rather than fixed speculatively.
