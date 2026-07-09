@@ -308,7 +308,7 @@
         if (!n) continue;
         elems.push({
           data: {
-            id: n.id, label: n.id.split(':').slice(1).join(':'), type: n.type,
+            id: n.id, label: short(n.id), type: n.type,
             inferred: n.inferred, file: n.file, line: n.line, hash: n.hash, ...n.props,
           },
           classes: [n.inferred ? 'inferred' : '', id === rootId ? 'root-node' : ''].join(' ').trim(),
@@ -485,7 +485,11 @@
       document.getElementById('panel-body').innerHTML = renderPanelBody(data);
     }
 
-    function short(id) { return id.split(':').slice(1).join(':'); }
+    function short(id) {
+      const n = nodeById[id];
+      if (n && n.type === 'endpoint') return `${n.props.method} ${n.props.path}`;
+      return id.split(':').slice(1).join(':');
+    }
 
     function escapeHtml(s) {
       const div = document.createElement('div');
@@ -570,11 +574,9 @@
       const { endpointIds, stoppedHubs } = reachableFromEndpoints(data.id);
       if (!endpointIds.length) return '';
 
-      const links = endpointIds.map(id => {
-        const ep = nodeById[id];
-        const label = ep ? `${ep.props.method} ${ep.props.path}` : short(id);
-        return `<span class="panel-link" data-nav="${id}">${label}</span>`;
-      }).join(', ');
+      const links = endpointIds.map(id =>
+        `<span class="panel-link" data-nav="${id}">${short(id)}</span>`
+      ).join(', ');
 
       let hubNote = '';
       if (stoppedHubs.length) {
