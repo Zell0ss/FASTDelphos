@@ -421,6 +421,49 @@ def test_run_is_deterministic_with_gitignore_active(tmp_path):
     assert (out_1 / "graph.json").read_text() == (out_2 / "graph.json").read_text()
 
 
+def test_zero_internal_calls_prints_sanity_warning(capsys):
+    with tempfile.TemporaryDirectory() as d:
+        repo = pathlib.Path(d) / "repo"
+        (repo / "lonely").mkdir(parents=True)
+        (repo / "lonely" / "__init__.py").write_text("", encoding="utf-8")
+        (repo / "lonely" / "mod.py").write_text(
+            "import os\n\n\ndef f():\n    return os.getcwd()\n", encoding="utf-8"
+        )
+        out = pathlib.Path(d) / "out"
+
+        run(repo, out)
+
+        captured = capsys.readouterr()
+        assert "0 llamadas internas resueltas" in captured.out
+        assert "lonely" in captured.out
+
+
+def test_nonzero_internal_calls_does_not_print_sanity_warning(capsys):
+    # NOTE: deliberately not using the SIMPLE_API fixture here — its
+    # handlers never actually call db.py's functions, so it genuinely has
+    # 0 resolved_internal today (verified independently of this plan's
+    # fix) and would make this test assert the wrong thing. This fixture
+    # has a real cross-file call (main.compute -> helpers.double).
+    with tempfile.TemporaryDirectory() as d:
+        repo = pathlib.Path(d) / "repo"
+        (repo / "app").mkdir(parents=True)
+        (repo / "app" / "__init__.py").write_text("", encoding="utf-8")
+        (repo / "app" / "helpers.py").write_text(
+            "def double(x):\n    return x * 2\n", encoding="utf-8"
+        )
+        (repo / "app" / "main.py").write_text(
+            "from app.helpers import double\n\n\n"
+            "def compute(x):\n    return double(x)\n",
+            encoding="utf-8",
+        )
+        out = pathlib.Path(d) / "out"
+
+        run(repo, out)
+
+        captured = capsys.readouterr()
+        assert "llamadas internas resueltas" not in captured.out
+
+
 def test_package_load_failure_surfaces_as_tool_limitation_gap():
     with tempfile.TemporaryDirectory() as d:
         repo = pathlib.Path(d) / "repo"

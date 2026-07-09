@@ -98,6 +98,18 @@ def run(
             )
         )
 
+    total = call_coverage["total"]
+
+    if total["resolved_internal"] == 0 and inventory.functions:
+        print(
+            f"⚠ 0 llamadas internas resueltas con {len(inventory.functions)} "
+            "funciones inventariadas.\n"
+            f"  Internos derivados del inventario: "
+            f"{{{', '.join(sorted(inventory.top_level_packages))}}}\n"
+            "  Posible mismatch de descubrimiento/topología — revisar antes "
+            "de fiarse del grafo."
+        )
+
     if call_excluded:
         total_files = len(collect_py_files(repo_path, exclude_patterns, use_gitignore))
         excluded_count = len(call_excluded)
@@ -114,7 +126,6 @@ def run(
         f"{', '.join(sorted(inventory.top_level_packages)) or '(none)'}"
     )
 
-    total = call_coverage["total"]
     print(
         f"  call graph coverage: {total['resolved_internal']} internal, "
         f"{total['resolved_external']} external, "
