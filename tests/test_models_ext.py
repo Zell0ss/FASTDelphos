@@ -58,3 +58,39 @@ def test_extract_models_excludes_matching_files(tmp_path):
     names = {n.props["name"] for n in nodes}
     assert "Kept" in names
     assert "Dropped" not in names
+
+
+def test_extract_models_survives_shadowed_reexport_subpackage(tmp_path):
+    # Mirrors illumiows: without the shadow-tolerant loader, griffe.load
+    # raises CyclicAliasError on `public/__init__.py`'s re-export, and
+    # _load_models's broad `except Exception: pass` silently swallows it —
+    # every model in the package (not just the shadowed part) goes missing
+    # with zero indication anything went wrong.
+    repo = tmp_path / "repo"
+
+    def _write(rel: str, content: str) -> None:
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    # "api" itself needs its own __init__.py here — models.py's top-level
+    # package discovery (unlike _calls_resolver.py's) only looks one level
+    # deep for __init__.py and doesn't handle namespace-root packages; that's
+    # a separate, pre-existing gap, not what this test is about.
+    _write("api/__init__.py", "")
+    _write(
+        "api/public/__init__.py",
+        (
+            "from api.public.workload import views as workload\n"
+            "from api.public.labels import views as labels\n"
+        ),
+    )
+    _write(
+        "api/public/workload/views.py",
+        "from pydantic import BaseModel\n\n\nclass Workload(BaseModel):\n    id: int\n",
+    )
+    _write("api/public/labels/views.py", "def get_labels():\n    return []\n")
+
+    nodes, _ = extract_models(repo, [])
+    names = {n.props["name"] for n in nodes}
+    assert "Workload" in names

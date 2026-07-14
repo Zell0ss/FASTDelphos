@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import griffe
 
 from cc.extract._collect import excluded_files
+from cc.extract._griffe_loader import load_tolerant
 
 _SKIP_DIRS = {".venv", "__pycache__", ".git", "node_modules", ".tox", "dist", "build", "tests"}
 
@@ -38,6 +39,17 @@ class SymbolInventory:
     # to load via griffe but couldn't (e.g. a SyntaxError inside it). It
     # still counts as internal in top_level_packages — we know it's ours,
     # we just can't see inside it right now.
+    scrubbed: list[tuple[str, str, str]] = field(default_factory=list)
+    # (parent_qualname, alias_name, target_path) — a re-export alias dropped
+    # from the griffe tree because it shadowed a real subpackage directory of
+    # the same name (see _griffe_loader.py). No information lost: the AST
+    # import table already captures the same re-export. Reported as an
+    # aggregate count, never silently.
+    module_load_failures: list[tuple[str, str, str]] = field(default_factory=list)
+    # (module_qualname, location, error) — unlike load_failures, this is a
+    # SINGLE MODULE inside an otherwise-successfully-loaded top-level
+    # package that griffe couldn't process — the rest of the package is
+    # still in the inventory.
 
 
 def _walk_griffe_functions(
@@ -130,7 +142,9 @@ def build_symbol_inventory(
     ) -> None:
         sys.path.insert(0, str(search_paths[0]))
         try:
-            pkg = griffe.load(pkg_name, search_paths=search_paths)
+            pkg, scrubbed, module_failures = load_tolerant(pkg_name, search_paths)
+            inv.scrubbed.extend(scrubbed)
+            inv.module_load_failures.extend(module_failures)
             _walk_griffe_functions(pkg, inv, [], excluded)
         except Exception as exc:
             inv.load_failures.append((pkg_name, str(location), str(exc)))

@@ -193,7 +193,7 @@ The `openai_compatible` provider is a thin `httpx` client against `POST {base_ur
 
 **Phase 2** (`cc annotate` — LLM why-notes, hash-gated, opt-in): complete — both the `anthropic` and `openai_compatible` providers are implemented (see [LLM why-notes](#llm-why-notes-cc-annotate) above).
 
-Hardened against a second real target beyond agora (a multi-router corporate repo): endpoint identity now survives two routers declaring the same apparent route from different namespaces (flagged as a gap, not a crash), and the target's own `.gitignore` is respected by default.
+Hardened against a second real target beyond agora (a multi-router corporate repo): endpoint identity now survives two routers declaring the same apparent route from different namespaces (flagged as a gap, not a crash), the target's own `.gitignore` is respected by default, and a package whose `__init__.py` re-exports a submodule under an alias sharing that submodule's own directory name — a pattern that used to make griffe abort loading the entire package — now loads in full (the shadowing alias is transparently scrubbed and reported, never silently).
 
 Not started, no timeline: a `generic` adapter — static analysis for non-FastAPI repos, interchangeable with the LLM option without touching anything in Phase 1.
 

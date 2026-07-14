@@ -141,3 +141,32 @@ first-party source for a given repo's exclude configuration.
 `docs/superpowers/plans/2026-07-09-classifier-internal-external-fix.md` — no test or real
 target currently exercises a case where this actually changes classification output, so
 deferred rather than fixed speculatively.
+
+## `models.py`'s top-level package discovery misses namespace-root packages
+
+**Status:** ⏳ not implemented, deliberately deferred — confirmed real, out of scope for the
+shadow-tolerant-loader fix that found it (`doc_proyecto/FASE4_SHADOWEDALIAS.md`).
+
+**Symptom:** `extract/models.py`'s `_load_models` discovers top-level packages via
+`repo_path.glob("*/__init__.py")` — one level deep, requires `__init__.py` directly under
+the repo root. A namespace-root package (a top-level directory with no `__init__.py` of its
+own, e.g. illumiows's `api/`) is invisible to it: no Pydantic model anywhere under that tree
+is ever extracted, regardless of the shadowed-re-export fix. `_calls_resolver.py`'s
+`build_symbol_inventory` does not have this problem — its own discovery loop
+(`repo_path.iterdir()` + `entry.is_dir()` check, no `__init__.py` requirement) already
+handles namespace-root packages correctly, which is why the call graph resolves fine for
+this shape while the model graph doesn't.
+
+**Why it's deferred, not fixed:** found incidentally while writing the shadow-tolerant
+loader's integration test for `models.py` — fixing it means unifying `models.py`'s discovery
+loop with `_calls_resolver.py`'s (a second, independent change with its own regression
+surface), and no current test target (agora) has this shape at the top level, so there's no
+concrete case pushing for it yet.
+
+**What implementing it would take:** replace `models.py`'s `repo_path.glob("*/__init__.py")`
+loop with the same `repo_path.iterdir()` + directory/`.py`-file discovery
+`build_symbol_inventory` already uses (or, better, have `extract_models` reuse the already-
+computed `inventory.top_level_packages` instead of re-discovering packages from scratch).
+
+**Relevance:** will recur on any repo whose entrypoint package is a PEP 420 namespace
+package with Pydantic models inside it — illumiows is exactly this shape.

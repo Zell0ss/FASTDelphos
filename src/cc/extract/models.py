@@ -5,6 +5,7 @@ import sys
 import griffe
 
 from cc.extract._collect import excluded_files
+from cc.extract._griffe_loader import load_tolerant
 from cc.graph.hash_util import node_hash
 from cc.graph.schema import Edge, Node
 
@@ -23,7 +24,7 @@ def _load_models(
     def _try_load(pkg_name: str, search_paths: list[pathlib.Path]) -> None:
         sys.path.insert(0, str(search_paths[0]))
         try:
-            pkg = griffe.load(pkg_name, search_paths=search_paths)
+            pkg, _scrubbed, _module_failures = load_tolerant(pkg_name, search_paths)
             _walk_griffe(pkg, found, excluded)
         except Exception:
             pass
@@ -59,7 +60,11 @@ def _walk_griffe(
     if isinstance(obj, griffe.Alias):
         # Skip aliases to external packages (e.g. fastapi.APIRouter)
         return
-    if getattr(obj, "filepath", None) in excluded:
+    filepath = getattr(obj, "filepath", None)
+    # A PEP 420 namespace package's Module has a *list* of filepaths (one per
+    # search root it spans), not a single Path — it isn't itself a file that
+    # could match an exclude pattern, so it's never individually excluded.
+    if not isinstance(filepath, list) and filepath in excluded:
         return
     if isinstance(obj, griffe.Class):
         bases = []

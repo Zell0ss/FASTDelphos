@@ -486,3 +486,70 @@ def test_package_load_failure_surfaces_as_tool_limitation_gap():
         assert len(load_gaps) == 1
         assert "broken" in load_gaps[0]["missing"]
         assert load_gaps[0]["severity"] == {"comprehension": "warning", "compliance": "error"}
+
+
+def test_shadowed_reexport_resolves_end_to_end_and_reports_scrub_count(capsys):
+    # Mirrors illumiows: without the shadow-tolerant loader this whole
+    # package would fail to load and the call below would be
+    # unresolved_dynamic, not a real edge. The scrub must also never be
+    # silent — it's reported as an aggregate count in the coverage report.
+    with tempfile.TemporaryDirectory() as d:
+        repo = pathlib.Path(d) / "repo"
+        (repo / "api" / "public" / "workload").mkdir(parents=True)
+        (repo / "api" / "public" / "labels").mkdir(parents=True)
+        (repo / "api" / "public" / "__init__.py").write_text(
+            "from api.public.workload import views as workload\n"
+            "from api.public.labels import views as labels\n",
+            encoding="utf-8",
+        )
+        (repo / "api" / "public" / "workload" / "views.py").write_text(
+            "from api.public.workload.crud import helper\n\n\n"
+            "def get_workload():\n"
+            "    return helper()\n",
+            encoding="utf-8",
+        )
+        (repo / "api" / "public" / "workload" / "crud.py").write_text(
+            "def helper():\n    return 42\n", encoding="utf-8"
+        )
+        (repo / "api" / "public" / "labels" / "views.py").write_text(
+            "def get_labels():\n    return []\n", encoding="utf-8"
+        )
+        out = pathlib.Path(d) / "out"
+
+        run(repo, out)
+
+        data = json.loads((out / "graph.json").read_text())
+        call_edges = {(e["from_"], e["to"]) for e in data["edges"] if e["type"] == "calls"}
+        assert (
+            "function:api.public.workload.views.get_workload",
+            "function:api.public.workload.crud.helper",
+        ) in call_edges
+
+        captured = capsys.readouterr()
+        assert "2 re-exports shadow neutralizados" in captured.out
+
+
+def test_module_load_failure_surfaces_as_per_module_tool_limitation_gap():
+    # A SyntaxError in a nested submodule (not the package's own __init__.py)
+    # must be reported as its own module-level gap distinct from the
+    # package-wide one — and must not block the rest of the package's
+    # functions from being extracted.
+    with tempfile.TemporaryDirectory() as d:
+        repo = pathlib.Path(d) / "repo"
+        (repo / "pkg").mkdir(parents=True)
+        (repo / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+        (repo / "pkg" / "broken.py").write_text("def f(:\n", encoding="utf-8")
+        (repo / "pkg" / "fine.py").write_text("def g():\n    return 1\n", encoding="utf-8")
+        out = pathlib.Path(d) / "out"
+
+        run(repo, out)
+
+        data = json.loads((out / "graph.json").read_text())
+        module_gaps = [
+            g
+            for g in data["gaps"]
+            if g["kind"] == "tool_limitation" and "pkg.broken" in g["missing"]
+        ]
+        assert len(module_gaps) == 1
+        assert module_gaps[0]["severity"] == {"comprehension": "warning", "compliance": "error"}
+        assert any(n["id"] == "function:pkg.fine.g" for n in data["nodes"])

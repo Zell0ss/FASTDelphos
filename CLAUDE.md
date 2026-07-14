@@ -79,6 +79,8 @@ Gap fields: `kind`, `where` (file:line + node id), `missing` (human description)
 
 **Oracle** (`oracle.py`) — only used with `--oracle` flag. Discovers top-level sub-packages (not just `repo_path.name`) to try `backend.main` etc. Adds target's `.venv` site-packages to `sys.path`. Does `os.chdir(repo_path)` so pydantic-settings finds `.env`. Uses `app.openapi()` (fully resolves sub-routers), not `app.routes`.
 
+**griffe loading** (`extract/_griffe_loader.py`) — both `models.py` and `_calls_resolver.py` load packages through `load_tolerant()` (backed by `ShadowTolerantLoader`, a `griffe.GriffeLoader` subclass), never `griffe.load()` directly. Handles the illumiows pattern: a package's `__init__.py` re-exporting a submodule under an alias that shares the submodule's own directory name (`from api.public.workload import views as workload`) — vanilla griffe raises `CyclicAliasError`/`AliasResolutionError` and aborts loading the *entire* package. The loader scrubs the shadowing alias (no information lost — the AST import table already has it) and isolates any other per-module load failure so one broken module never takes the whole package down. Depends on `GriffeLoader` internals (`_get_or_create_parent_module`, `_load_submodule`) — griffe is pinned `>=2.0,<2.1` in `pyproject.toml`; `tests/test_griffe_loader.py` is the canary that must stay green before widening that range. Any Module with a namespace package's `filepath` (a `list`, not a `Path`) must never be checked with `in excluded` directly — guard with `isinstance(filepath, list)` first (see `_walk_griffe_functions` in `_calls_resolver.py` and `_walk_griffe` in `models.py`).
+
 ## Phase Roadmap
 
 **Phase 1 (current):** FastAPI adapter, pure static, zero LLM. Target: agora.  

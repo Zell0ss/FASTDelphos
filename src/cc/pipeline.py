@@ -98,6 +98,19 @@ def run(
             )
         )
 
+    for module_qualname, location, error in inventory.module_load_failures:
+        graph.gaps.append(
+            Gap(
+                kind="tool_limitation",
+                where=f"{location}:0",
+                node_id=None,
+                missing=f"Module `{module_qualname}` could not be loaded by griffe — {error}",
+                suggested="Fix the error so griffe can introspect this module; the rest "
+                "of its package was still loaded successfully.",
+                severity={"comprehension": "warning", "compliance": "error"},
+            )
+        )
+
     total = call_coverage["total"]
 
     if total["resolved_internal"] == 0 and inventory.functions:
@@ -125,6 +138,13 @@ def run(
         "  top-level packages detected: "
         f"{', '.join(sorted(inventory.top_level_packages)) or '(none)'}"
     )
+
+    if inventory.scrubbed:
+        print(
+            f"  {len(inventory.scrubbed)} re-exports shadow neutralizados durante la carga "
+            "(re-export alias con el mismo nombre que un subpaquete real — "
+            "info ya capturada por la tabla de imports, no es un gap)"
+        )
 
     print(
         f"  call graph coverage: {total['resolved_internal']} internal, "

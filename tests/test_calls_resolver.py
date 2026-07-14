@@ -116,6 +116,50 @@ def test_namespace_package_without_init_is_discovered_and_internal(tmp_path):
     assert "api.routes.views.delete_iplist_allregions" in inv.functions
     assert "api.routes.crud.delete_iplist" in inv.functions
     assert not inv.load_failures
+    assert not inv.scrubbed
+    assert not inv.module_load_failures
+
+
+def test_shadowed_reexport_subpackage_resolves_internal(tmp_path):
+    # Mirrors illumiows: root namespace package `api/` (no __init__.py) ->
+    # regular subpackage `api/public/` (has __init__.py) -> namespace
+    # sub-subpackages `workload/`, `labels/` (no __init__.py), re-exported by
+    # `public/__init__.py` under aliases sharing the subdirectory's own name.
+    # Before the shadow-tolerant loader, this pattern made griffe raise
+    # CyclicAliasError/AliasResolutionError and abort loading the ENTIRE
+    # `api` package — every call in it fell back to unresolved_dynamic.
+    repo = tmp_path / "repo"
+    _write(
+        repo,
+        "api/public/__init__.py",
+        (
+            "from api.public.workload import views as workload\n"
+            "from api.public.labels import views as labels\n"
+        ),
+    )
+    _write(
+        repo,
+        "api/public/workload/views.py",
+        (
+            "from api.public.workload.crud import helper\n\n\n"
+            "def get_workload():\n"
+            "    return helper()\n"
+        ),
+    )
+    _write(repo, "api/public/workload/crud.py", "def helper():\n    return 42\n")
+    _write(repo, "api/public/labels/views.py", "def get_labels():\n    return []\n")
+
+    inv = build_symbol_inventory(repo)
+
+    assert "api" in inv.top_level_packages
+    assert "api.public.workload.views.get_workload" in inv.functions
+    assert "api.public.workload.crud.helper" in inv.functions
+    assert "api.public.labels.views.get_labels" in inv.functions
+    assert not inv.load_failures
+    assert not inv.module_load_failures
+    scrubbed_names = {(parent, name) for parent, name, _target in inv.scrubbed}
+    assert ("api.public", "workload") in scrubbed_names
+    assert ("api.public", "labels") in scrubbed_names
 
 
 def test_override_top_levels_replaces_detected_set(tmp_path):
